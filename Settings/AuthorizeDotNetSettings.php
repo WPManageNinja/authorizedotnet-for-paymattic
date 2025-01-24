@@ -228,10 +228,16 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         return $errors;
     }
 
-    public function isLive($formId = false)
+    public static function isLive($formId = false)
     {
-        $settings = $this->getSettings();
+        $settings = self::getSettings();
         return $settings['payment_mode'] == 'live';
+    }
+
+    public static function getPaymentMode($formId = false)
+    {
+        $settings = static::getSettings();
+        return $settings['payment_mode'];
     }
 
     public function getApiLoginId($formId = false)

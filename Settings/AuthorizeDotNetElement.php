@@ -74,6 +74,8 @@ class AuthorizeDotNetElement extends BaseComponent
 
     public function render($element, $form, $elements)
     {
+        do_action('wppayform_load_checkout_js_authorizedotnet');
+
         if (!$this->validateApi()) { ?>
             <p style="color: red">You did not configure AtuhorizeDotNet payment gateway. Please configure authorizedotnet payment
                 gateway from <b>Paymattic->Payment Gateway->AtuhorizeDotNet Settings</b> to start accepting payments</p>
@@ -85,6 +87,8 @@ class AuthorizeDotNetElement extends BaseComponent
 
     public function renderForMultiple($paymentSettings, $form, $elements)
     {
+        do_action('wppayform_load_checkout_js_authorizedotnet');
+    
         $component = $this->component();
         $component['id'] = 'authorizedotnet_gateway_element';
         $component['field_options'] = $paymentSettings;
