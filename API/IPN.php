@@ -102,7 +102,7 @@ class IPN
 
     public function makeApiCall($path, $args, $formId, $method = 'GET')
     {
-        $apiKey = (new AuthorizeDotNetSettings())->getApiKey($formId);
+        $apiKey = (new AuthorizeDotNetSettings())->getApiLoginId($formId);
         // we are using basic authentication , we will use the api key as username and password empty so add : at the end
         $basicAuthCred = $apiKey . ':';
         $basicAuthCred = base64_encode($basicAuthCred);

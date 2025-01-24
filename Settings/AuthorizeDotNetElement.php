@@ -69,7 +69,7 @@ class AuthorizeDotNetElement extends BaseComponent
     public function validateApi()
     {
         $authorizedotnet = new AuthorizeDotNetSettings();
-        return $authorizedotnet->getApiKey();
+        return $authorizedotnet->getApiLoginId();
     }
 
     public function render($element, $form, $elements)

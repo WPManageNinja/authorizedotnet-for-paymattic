@@ -1,0 +1,44 @@
+# Ignore node_modules directory
+node_modules/
+
+# Ignore log files and databases
+# *.log
+# *.sql
+# *.sqlite
+
+# Ignore OS generated files
+# .DS_Store
+# Thumbs.db
+
+# Ignore IDE specific files
+.vscode/
+.idea/
+.DS_Store
+
+# Ignore Composer dependencies
+
+# Ignore build directories
+build/
+dist/
+
+# Ignore environment files
+
+# Ignore compiled files
+# *.min.js
+# *.min.css
+
+# Ignore Sass cache files
+# .sass-cache/
+
+# Ignore temporary files
+# *.tmp
+# *.swp
+# *.bak
+# *.backup
+# *.orig
+# *.save
+
+# Ignore other specific files
+composer.lock
+package-lock.json
+yarn.lock

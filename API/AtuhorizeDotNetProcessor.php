@@ -15,7 +15,7 @@ use WPPayForm\App\Services\ConfirmationHelper;
 use WPPayForm\App\Models\SubmissionActivity;
 
 // can't use namespace as these files are not accessible yet
-require_once AuthorizeDotNet_FOR_PAYMATTIC_DIR . '/Settings/AuhtorizeDotNetElement.php';
+require_once AuthorizeDotNet_FOR_PAYMATTIC_DIR . '/Settings/AuthorizeDotNetElement.php';
 require_once AuthorizeDotNet_FOR_PAYMATTIC_DIR . '/Settings/AuthorizeDotNetSettings.php';
 require_once AuthorizeDotNet_FOR_PAYMATTIC_DIR . '/API/IPN.php';
 
