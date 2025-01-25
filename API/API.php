@@ -55,7 +55,7 @@ class API {
         $code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
         $msg = wp_remote_retrieve_response_message($response);
-        // dd($body, $response, $code, $msg, $args);
+ 
         if ($code >= 400) {            
             return [
                 'success' => false,

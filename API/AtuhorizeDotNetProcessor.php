@@ -141,18 +141,18 @@ class AuthorizeDotNetProcessor
             )
         );
 
-        $merchantDetails = (new API())->makeApiCall($marchentArgs, $form->ID, 'POST');
-        dd($merchantDetails);
+        // $merchantDetails = (new API())->makeApiCall($marchentArgs, $form->ID, 'POST');
+        // dd($merchantDetails);
 
         $name = $submission->customer_name ?? '';
 
         // getHostedPaymentPageRequest
         $hostedPaymentPageRequest = array(
             'getHostedPaymentPageRequest' => array(
-                'marchantAuthentication' => $authArgs['merchantAuthentication'],
+                'merchantAuthentication' => $authArgs['merchantAuthentication'],
                 'transactionRequest' => array(
                     'transactionType' => 'authCaptureTransaction',
-                    'amount' => (float)($transaction->amount / 100),
+                    'amount' => number_format($submission->payment_total / 100, 2),
                     'customer' => array(
                         'email' => $submission->customer_email ?? ''
                     ),
@@ -165,48 +165,54 @@ class AuthorizeDotNetProcessor
                     'setting' => array(
                         array(
                             'settingName' => 'hostedPaymentReturnOptions',
-                            'settingValue' => '{\"showReceipt\": true, \"url\": "' . $this->getSuccessURL($form, $submission) . '", \"urlText\": \"Continue\", \"cancelUrl\": "' . $this->getSuccessURL($form, $submission) . '", \"cancelUrlText\": \"Cancel\"}'
+                            'settingValue' => '{"showReceipt": true, "url": "' . $this->getSuccessURL($form, $submission) . '", "urlText": "Continue", "cancelUrl": "' . $this->getSuccessURL($form, $submission) . '", "cancelUrlText": "Cancel"}'
                         ),
                         array(
                             'settingName' => 'hostedPaymentButtonOptions',
-                            'settingValue' => '{\"text\": \"Pay\"}'
+                            'settingValue' => '{"text": "Pay"}'
                         ),
-                        array(
-                            'settingName' => 'hostedPaymentStyleOptions',
-                            'settingValue' => '{\"bgColor\": \"#FF0000\"}'
-                        ),
-                        array(
-                            'settingName' => 'hostedPaymentPaymentOptions',
-                            'settingValue' => '{\"cardCodeRequired\": true, \"showCreditCard\": true, \"showBankAccount\": true}'
-                        ),
-                        array(
-                            'settingName' => 'hostedPaymentSecurityOptions',
-                            'settingValue' => '{\"captcha\": false}'
-                        ),
-                        array(
-                            'settingName' => 'hostedPaymentShippingAddressOptions',
-                            'settingValue' => '{\"show\": false, \"required\": false}'
-                        ),
-                        array(
-                            'settingName' => 'hostedPaymentBillingAddressOptions',
-                            'settingValue' => '{\"show\": true, \"required\": true}'
-                        ),
-                        array(
-                            'settingName' => 'hostedPaymentCustomerOptions',
-                            'settingValue' => '{\"showEmail\": true, \"requiredEmail\": true, \"addPaymentProfile\": true}'
-                        ),
-                        array(
-                            'settingName' => 'hostedPaymentOrderOptions',
-                            'settingValue' => '{\"show\": true, \"merchantName\": \"Paymattic\", \"description\": \"Payment for ' . $form->post_title . '\"}'
-                        ),
+                        // array(
+                        //     'settingName' => 'hostedPaymentStyleOptions',
+                        //     'settingValue' => '{\"bgColor\": \"#FF0000\"}'
+                        // ),
+                        // array(
+                        //     'settingName' => 'hostedPaymentPaymentOptions',
+                        //     'settingValue' => '{\"cardCodeRequired\": true, \"showCreditCard\": true, \"showBankAccount\": true}'
+                        // ),
+                        // array(
+                        //     'settingName' => 'hostedPaymentSecurityOptions',
+                        //     'settingValue' => '{\"captcha\": false}'
+                        // ),
+                        // array(
+                        //     'settingName' => 'hostedPaymentShippingAddressOptions',
+                        //     'settingValue' => '{\"show\": false, \"required\": false}'
+                        // ),
+                        // array(
+                        //     'settingName' => 'hostedPaymentBillingAddressOptions',
+                        //     'settingValue' => '{\"show\": true, \"required\": true}'
+                        // ),
+                        // array(
+                        //     'settingName' => 'hostedPaymentCustomerOptions',
+                        //     'settingValue' => '{\"showEmail\": true, \"requiredEmail\": true, \"addPaymentProfile\": true}'
+                        // ),
+                        // array(
+                        //     'settingName' => 'hostedPaymentOrderOptions',
+                        //     'settingValue' => '{\"show\": true, \"merchantName\": \"Paymattic\", \"description\": \"Payment for ' . $form->post_title . '\"}'
+                        // ),
                     )
                 )
             )
         );
 
-        $formTokenReq = (new API())->makeApiCall($hostedPaymentPageRequest, $form->ID, 'POST');
+        $response = (new API())->makeApiCall($hostedPaymentPageRequest, $form->ID, 'POST');
+        
+        if (isset($response['success']) && !$response['success']) {
+            wp_send_json_error(array('message' => $response['msg']), 423);
+        }
 
-        dd($formTokenReq);
+        $data = $response['data'];
+        $formToken = $data['token'];
+
 
         
         
@@ -214,10 +220,10 @@ class AuthorizeDotNetProcessor
             wp_send_json_error(array('message' => $merchantDetails['msg']), 423);
         }
 
-        $marchentDetails = Arr::get($merchantDetails, 'data');
-        $publicClientKey = $marchentDetails['publicClientKey'];
+        // $marchentDetails = Arr::get($merchantDetails, 'data');
+        // $publicClientKey = $marchentDetails['publicClientKey'];
 
-        if (!$publicClientKey) {
+        if (!$formToken) {
             $submissionModel = new Submission();
             $submission = $submissionModel->getSubmission($transaction->submission_id);
             $submissionData = array(
@@ -241,29 +247,29 @@ class AuthorizeDotNetProcessor
             ], 423);
         }
 
-        $checkoutData = [
-            'clientKey' => $publicClientKey,
-            'apiLoginID' => $authArgs['name'],
-            'transactionKey' => $authArgs['transactionKey'],
-            'environment' => $paymentMode == 'live' ? 'prod' : 'qa',
-            'action' => 'receipt',
-            'email'    => $submission->customer_email ? $submission->customer_email : 'moneris@example.com',
-            'ref'      => $submission->submission_hash,
-            'amount'   => $amount,
-            'currency' => $currency, //
-            'label'    => $form->post_title,
-            'metadata' => [
-                'payment_handler' => 'WPPayForm',
-                'form_id'         => $form->ID,
-                'transaction_id'  => $transaction->id,
-                'submission_id'   => $submission->id,
-                'form'            => $form->post_title
-            ]
-        ];
+        // $checkoutData = [
+        //     'clientKey' => $publicClientKey,
+        //     'apiLoginID' => $authArgs['name'],
+        //     'transactionKey' => $authArgs['transactionKey'],
+        //     'environment' => $paymentMode == 'live' ? 'prod' : 'qa',
+        //     'action' => 'receipt',
+        //     'email'    => $submission->customer_email ? $submission->customer_email : 'moneris@example.com',
+        //     'ref'      => $submission->submission_hash,
+        //     'amount'   => $amount,
+        //     'currency' => $currency, //
+        //     'label'    => $form->post_title,
+        //     'metadata' => [
+        //         'payment_handler' => 'WPPayForm',
+        //         'form_id'         => $form->ID,
+        //         'transaction_id'  => $transaction->id,
+        //         'submission_id'   => $submission->id,
+        //         'form'            => $form->post_title
+        //     ]
+        // ];
 
         // dd($checkoutData);
 
-        $checkoutData = apply_filters('wppayform_moneris_checkout_data', $checkoutData, $submission, $transaction, $form, $form_data);
+        // $checkoutData = apply_filters('wppayform_moneris_checkout_data', $checkoutData, $submission, $transaction, $form, $form_data);
 
         do_action('wppayform_log_data', [
             'form_id' => $submission->form_id,
@@ -275,16 +281,21 @@ class AuthorizeDotNetProcessor
         ]);
 
         $confirmation = ConfirmationHelper::getFormConfirmation($submission->form_id, $submission);
+
+        $scriptUrl = $this->getActionUrl();
         # Tell the client to handle the action
         wp_send_json_success([
             'nextAction'       => 'authorizedotnet',
             'actionName'       => 'initAuthorizeDotNetCheckout',
-            'clientKey'        => $publicClientKey,
-            'action_url'      => $this->getSuccessURL($form, $submission),
+            'clientKey'      => '9shHK3NFLwHatCpQxbXF2W27fHE46qR6Ugn7zu3v635zjt722qt7y2VLpgPBF5Rm',
+            'apiLoginID'       => $authArgs['merchantAuthentication']['name'],
+            'formToken'        => $formToken,
+            'scriptUrl'             => self::getAccpetJsUrl(),
+            'actionUrl'      => $this->getActionUrl(),
             'submission_id'    => $submission->id,
-            'checkout_data'       => $checkoutData,
+            // 'checkout_data'       => $checkoutData,
             'transaction_hash' => $submission->submission_hash,
-            'message'          => __('Moneris checkout page is loading. Please wait ....', 'wp-payment-form-pro'),
+            'message'          => __('Authorize Do net Checkout button is loading. Please wait ....', 'wp-payment-form-pro'),
             'result'           => [
                 'insert_id' => $submission->id
             ]
@@ -306,6 +317,26 @@ class AuthorizeDotNetProcessor
                 'transactionKey' => $transactionKey
             )
         );
+    }
+
+    public static function getAccpetJsUrl()
+    {
+        $isLive = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())::isLive();
+        if ($isLive) {
+            return 'https://js.authorize.net/v3/AcceptUI.js';
+        } else {
+            return 'https://jstest.authorize.net/v3/AcceptUI.js';
+        }
+    }
+
+    public static function getActionUrl()
+    {
+        $isLive = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())::isLive();
+        if ($isLive) {
+            return 'https://accept.authorize.net/payment/payment';
+        } else {
+            return 'https://test.authorize.net/payment/payment';
+        }
     }
 
     public function handleRefund($refundAmount, $submission, $vendorTransaction)
@@ -392,12 +423,12 @@ class AuthorizeDotNetProcessor
 
     public function addCheckoutJs($settings)
     {
-        $isLive = (new  \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())::isLive();
-        if ($isLive) {
-            wp_enqueue_script('wppayform_authorizedotnet', 'https://js.authorize.net/v3/AcceptUI.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
-        } else {
-            wp_enqueue_script('wppayform_authorizedotnet', 'https://jstest.authorize.net/v3/AcceptUI.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
-        }
+        // $isLive = (new  \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())::isLive();
+        // if ($isLive) {
+        //     wp_enqueue_script('wppayform_authorizedotnet', 'https://js.authorize.net/v3/AcceptUI.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
+        // } else {
+        //     wp_enqueue_script('wppayform_authorizedotnet', 'https://jstest.authorize.net/v3/AcceptUI.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
+        // }
         wp_enqueue_script('wppayform_authorizedotnet_handler', AuthorizeDotNet_FOR_PAYMATTIC_URL . 'assets/js/authorizedotnet-handler.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
     }
 
