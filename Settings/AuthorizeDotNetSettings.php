@@ -51,7 +51,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
      */
     public static function settingsKeys() : array
     {
-        $slug = 'authorizedotnet-payment-for-paymattic';
+        $slug = 'authorizedotnet-for-paymattic';
 
         $updateAvailable = static::checkForUpdate($slug);
         return array(
@@ -60,8 +60,8 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
             'live_api_login_id' => '',
             'sandbox_transaction_key' => '',
             'live_transaction_key' => '',
-            'sandbox_signature_key' => '',
-            'live_signature_key' => '',
+            'sandbox_client_key' => '',
+            'live_client_key' => '',
             'update_available' => $updateAvailable
         );
     }
@@ -158,12 +158,12 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'type' => 'test_secret_key',
                 'placeholder' => __('Sandbox Transaction Key', 'authorizedotnet-for-paymattic')
             ),
-            // 'sandbox_signature_key' => array(
-            //     'value' => '',
-            //     'label' => __('Sandbox Signature Key', 'authorizedotnet-for-paymattic'),
-            //     'type' => 'test_pub_key',
-            //     'placeholder' => __('Sandbox Signature Key', 'authorizedotnet-for-paymattic')
-            // ),
+            'sandbox_client_key' => array(
+                'value' => '',
+                'label' => __('Sandbox Client Key', 'authorizedotnet-for-paymattic'),
+                'type' => 'test_pub_key',
+                'placeholder' => __('Sandbox Client Key', 'authorizedotnet-for-paymattic')
+            ),
             'live_api_login_id' => array(
                 'value' => '',
                 'label' => __('Live API Login ID', 'authorizedotnet-for-paymattic'),
@@ -176,12 +176,12 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'type' => 'live_secret_key',
                 'placeholder' => __('Live Transaction Key', 'authorizedotnet-for-paymattic')
             ),
-            // 'live_signature_key' => array(
-            //     'value' => '',
-            //     'label' => __('Live Signature Key', 'authorizedotnet-for-paymattic'),
-            //     'type' => 'live_secret_key',
-            //     'placeholder' => __('Live Signature Key', 'authorizedotnet-for-paymattic')
-            // ),
+            'live_client_key' => array(
+                'value' => '',
+                'label' => __('Live Client Key', 'authorizedotnet-for-paymattic'),
+                'type' => 'live_pub_key',
+                'placeholder' => __('Live Client Key', 'authorizedotnet-for-paymattic')
+            ),
             'desc' => array(
                 'value' => '<p>See our <a href="https://paymattic.com/docs/how-to-integrate-authorizedotnet-in-wordpress" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup.</p>',
                 'type' => 'html_attr',
@@ -250,6 +250,18 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         }
 
         return $settings['sandbox_api_login_id'];
+    }
+
+    public function getClientKey($formId = false)
+    {
+        $isLive = $this->isLive($formId);
+        $settings = $this->getSettings();
+
+        if ($isLive) {
+            return $settings['live_client_key'];
+        }
+
+        return $settings['sandbox_client_key'];
     }
 
     public function getTransactionKey($formId = false)

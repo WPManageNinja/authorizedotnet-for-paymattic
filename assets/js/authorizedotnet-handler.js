@@ -39,6 +39,9 @@ class AuthorizeDotNetHandler {
    
         const payload = new URLSearchParams({ token: formToken });
 
+        var dataValueInput = jQuery.parseHTML(`<input type="hidden" name="dataValue" id="dataValue" />`);
+        var dataDescriptor = jQuery.parseHTML(`<input type="hidden" name="dataDescriptor" id="dataDescriptor" />`);
+
         var newButtonHtml = jQuery.parseHTML(`
             <button type="button"
                   class="AcceptUI"
@@ -57,6 +60,8 @@ class AuthorizeDotNetHandler {
         this.$form.find('.wpf_loading_svg').hide();
         that.$form.parent().find('.wpf_authorize_text').hide();
 
+        this.$form.append(dataValueInput);
+        this.$form.append(dataDescriptor);
         this.$form.append(newButtonHtml);
         const script = document.createElement('script');
         script.src = res.scriptUrl; // Replace with the correct URL to accept.js
@@ -72,6 +77,25 @@ class AuthorizeDotNetHandler {
 
         // Append the script to the document's <head> or <body>
         document.head.appendChild(script);
+
+        // create a function to handle the response from the Accept.js library
+        window.responseHandler = function(response) {
+            console.log('responseHandler', response, 'form', that.$form);
+            if (response.messages.resultCode === 'Error') {
+                console.log('Error: ' + response.messages.message[0].code + ' ' + response.messages.message[0].text);
+            } else {
+                console.log('responseHandler', response);
+                jQuery("#dataValue").val(response.opaqueData.dataValue);
+                jQuery("#dataDescriptor").val(response.opaqueData.dataDescriptor);
+
+                // now make a api call to the server with the dataValue and dataDescriptor               
+
+                // that.$form.submit();
+            }
+        }
+
+     
+
             
         // that.payformHandler.buttonState('loading', '', false);
     }
@@ -81,6 +105,9 @@ class AuthorizeDotNetHandler {
     
     }
 }
+
+// handle response from Accept.js
+
 
 (function ($) {
     $.each($('form.wppayform_has_payment'), function () {

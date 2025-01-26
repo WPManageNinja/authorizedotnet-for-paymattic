@@ -283,11 +283,12 @@ class AuthorizeDotNetProcessor
         $confirmation = ConfirmationHelper::getFormConfirmation($submission->form_id, $submission);
 
         $scriptUrl = $this->getActionUrl();
+        $clientKey = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())->getClientKey($formId);
         # Tell the client to handle the action
         wp_send_json_success([
             'nextAction'       => 'authorizedotnet',
             'actionName'       => 'initAuthorizeDotNetCheckout',
-            'clientKey'      => '9shHK3NFLwHatCpQxbXF2W27fHE46qR6Ugn7zu3v635zjt722qt7y2VLpgPBF5Rm',
+            'clientKey'      => $clientKey,
             'apiLoginID'       => $authArgs['merchantAuthentication']['name'],
             'formToken'        => $formToken,
             'scriptUrl'             => self::getAccpetJsUrl(),
@@ -306,6 +307,7 @@ class AuthorizeDotNetProcessor
     {
         $apiLoginId = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())->getApiLoginId($formId);
         $transactionKey = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())->getTransactionKey($formId);
+       
 
         if (!$apiLoginId || !$transactionKey) {
             return new \WP_Error(423, 'Authorize.Net API credentials are not set');
@@ -314,7 +316,7 @@ class AuthorizeDotNetProcessor
         return array(
             'merchantAuthentication' => array(
                 'name' => $apiLoginId,
-                'transactionKey' => $transactionKey
+                'transactionKey' => $transactionKey,
             )
         );
     }
