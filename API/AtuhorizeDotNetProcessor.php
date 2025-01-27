@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
 
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Transaction;
+use WPPayForm\App\Models\OrderItem;
 use WPPayForm\App\Models\Form;
 use WPPayForm\App\Models\Submission;
 use WPPayForm\App\Services\PlaceholderParser;
@@ -94,7 +95,7 @@ class AuthorizeDotNetProcessor
         $transaction = $transactionModel->getTransaction($transactionId);
 
         $submission = (new Submission())->getSubmission($submissionId);
-        $this->handleRedirect($transaction, $submission, $form, $paymentMode);
+        $this->handleRedirect($transaction, $submission, $form, $form_data, $paymentMode);
     }
 
     private function getSuccessURL($form, $submission)
@@ -131,178 +132,123 @@ class AuthorizeDotNetProcessor
         ), home_url());
     }
 
-    public function handleRedirect($transaction, $submission, $form, $methodSettings)
+    public function handleRedirect($transaction, $submission, $form, $formData, $methodSettings)
     {
         $authArgs = $this->getAuthArgs($form->ID);
-        // get MerchantDetails Request 
-        $marchentArgs = array(
-            'getMerchantDetailsRequest' => array(
-                'merchantAuthentication' => $authArgs['merchantAuthentication']
-            )
-        );
+        // get authorizeDataValuye and authorizeDataDescriptor from fromData with sanitize_text_field
+        $authorizeDataValue = sanitize_text_field($formData['authorizeDataValue']);
+        $authorizeDataDescriptor = sanitize_text_field($formData['authorizeDataDescriptor']);
+       
+        // currency validate and get currency code
+        $this->validateCurrency($submission);
 
-        // $merchantDetails = (new API())->makeApiCall($marchentArgs, $form->ID, 'POST');
-        // dd($merchantDetails);
-
-        $name = $submission->customer_name ?? '';
-
-        // getHostedPaymentPageRequest
-        $hostedPaymentPageRequest = array(
-            'getHostedPaymentPageRequest' => array(
+        // truncate submissionhash to 18 characters for refId
+        $refId = substr($submission->submission_hash, 0, 20);
+        $createTransactionRequest = array(
+            'createTransactionRequest' => array(
                 'merchantAuthentication' => $authArgs['merchantAuthentication'],
+                'refId' => $refId, // truncate to 20 characters
                 'transactionRequest' => array(
                     'transactionType' => 'authCaptureTransaction',
-                    'amount' => number_format($submission->payment_total / 100, 2),
-                    'customer' => array(
-                        'email' => $submission->customer_email ?? ''
+                    'amount' => number_format( $submission->payment_total / 100, 2),
+                    'payment' => array(
+                        'opaqueData' => array(
+                            'dataDescriptor' => $authorizeDataDescriptor,
+                            'dataValue' => $authorizeDataValue
+                        )
                     ),
-                    'billTo' => array(
-                        'firstName' => 'dfds',
-                        'lastName' => 'dfds fdg',
-                    ),
-                ),
-                'hostedPaymentSettings' => array(
-                    'setting' => array(
-                        array(
-                            'settingName' => 'hostedPaymentReturnOptions',
-                            'settingValue' => '{"showReceipt": true, "url": "' . $this->getSuccessURL($form, $submission) . '", "urlText": "Continue", "cancelUrl": "' . $this->getSuccessURL($form, $submission) . '", "cancelUrlText": "Cancel"}'
-                        ),
-                        array(
-                            'settingName' => 'hostedPaymentButtonOptions',
-                            'settingValue' => '{"text": "Pay"}'
-                        ),
-                        // array(
-                        //     'settingName' => 'hostedPaymentStyleOptions',
-                        //     'settingValue' => '{\"bgColor\": \"#FF0000\"}'
-                        // ),
-                        // array(
-                        //     'settingName' => 'hostedPaymentPaymentOptions',
-                        //     'settingValue' => '{\"cardCodeRequired\": true, \"showCreditCard\": true, \"showBankAccount\": true}'
-                        // ),
-                        // array(
-                        //     'settingName' => 'hostedPaymentSecurityOptions',
-                        //     'settingValue' => '{\"captcha\": false}'
-                        // ),
-                        // array(
-                        //     'settingName' => 'hostedPaymentShippingAddressOptions',
-                        //     'settingValue' => '{\"show\": false, \"required\": false}'
-                        // ),
-                        // array(
-                        //     'settingName' => 'hostedPaymentBillingAddressOptions',
-                        //     'settingValue' => '{\"show\": true, \"required\": true}'
-                        // ),
-                        // array(
-                        //     'settingName' => 'hostedPaymentCustomerOptions',
-                        //     'settingValue' => '{\"showEmail\": true, \"requiredEmail\": true, \"addPaymentProfile\": true}'
-                        // ),
-                        // array(
-                        //     'settingName' => 'hostedPaymentOrderOptions',
-                        //     'settingValue' => '{\"show\": true, \"merchantName\": \"Paymattic\", \"description\": \"Payment for ' . $form->post_title . '\"}'
-                        // ),
-                    )
+                    'lineItems' => $this->getLineItems($submission),
+                    'customerIP' => $_SERVER['REMOTE_ADDR'],
                 )
             )
         );
 
-        $response = (new API())->makeApiCall($hostedPaymentPageRequest, $form->ID, 'POST');
+       $response = (new API())->makeApiCall($createTransactionRequest, $form->ID, 'POST');
         
         if (isset($response['success']) && !$response['success']) {
             wp_send_json_error(array('message' => $response['msg']), 423);
         }
 
         $data = $response['data'];
-        $formToken = $data['token'];
+        $transactionResponse = $data['transactionResponse'];
+        $refId = $data['refId'];
+        $responseCode = $transactionResponse['responseCode'];
+        if (1 == intval($responseCode)) {
+            // get the last four digits from the accountNumber
+            $cardlast4 = substr($transactionResponse['accountNumber'], -4);
 
-
-        
-        
-        if (isset($merchantDetails['success']) && !$merchantDetails['success']) {
-            wp_send_json_error(array('message' => $merchantDetails['msg']), 423);
-        }
-
-        // $marchentDetails = Arr::get($merchantDetails, 'data');
-        // $publicClientKey = $marchentDetails['publicClientKey'];
-
-        if (!$formToken) {
-            $submissionModel = new Submission();
-            $submission = $submissionModel->getSubmission($transaction->submission_id);
-            $submissionData = array(
-                'payment_status' => 'failed',
-                'updated_at' => current_time('Y-m-d H:i:s')
+            $updateData = array(
+                'card_last_4' => $cardlast4,
+                'charge_id' => $transactionResponse['transHash'],
+                'payment_note' => json_encode($data),
+                'payment_status' => 'paid'
             );
-            $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
 
-            do_action('wppayform_log_data', [
-                'form_id' => $submission->form_id,
-                'submission_id' => $submission->id,
-                'type' => 'activity',
-                'created_by' => 'Paymattic BOT',
-                'title' => 'AuthorizeDotNet Checkout is failed',
-                'content' => 'AuthorizeDotNet Modal is failed to initiate, please check the logs for more information.'
-            ]);
+            $this->markAsPaid('paid', $updateData, $transaction);
 
-            do_action('wppayform/form_payment_failed', $submission, $submission->form_id, $transaction, 'moneris');
-            wp_send_json([
-                'errors'      => __('AuthorizeDotNet payment method failed to initiate', 'wp-payment-form-pro')
-            ], 423);
         }
 
-        // $checkoutData = [
-        //     'clientKey' => $publicClientKey,
-        //     'apiLoginID' => $authArgs['name'],
-        //     'transactionKey' => $authArgs['transactionKey'],
-        //     'environment' => $paymentMode == 'live' ? 'prod' : 'qa',
-        //     'action' => 'receipt',
-        //     'email'    => $submission->customer_email ? $submission->customer_email : 'moneris@example.com',
-        //     'ref'      => $submission->submission_hash,
-        //     'amount'   => $amount,
-        //     'currency' => $currency, //
-        //     'label'    => $form->post_title,
-        //     'metadata' => [
-        //         'payment_handler' => 'WPPayForm',
-        //         'form_id'         => $form->ID,
-        //         'transaction_id'  => $transaction->id,
-        //         'submission_id'   => $submission->id,
-        //         'form'            => $form->post_title
-        //     ]
-        // ];
-
-        // dd($checkoutData);
-
-        // $checkoutData = apply_filters('wppayform_moneris_checkout_data', $checkoutData, $submission, $transaction, $form, $form_data);
-
-        do_action('wppayform_log_data', [
-            'form_id' => $submission->form_id,
-            'submission_id' => $submission->id,
-            'type' => 'activity',
-            'created_by' => 'Paymattic BOT',
-            'title' => 'Moneris Modal is initiated',
-            'content' => 'Moneris Modal is initiated to complete the payment'
-        ]);
-
-        $confirmation = ConfirmationHelper::getFormConfirmation($submission->form_id, $submission);
-
-        $scriptUrl = $this->getActionUrl();
-        $clientKey = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())->getClientKey($formId);
         # Tell the client to handle the action
         wp_send_json_success([
-            'nextAction'       => 'authorizedotnet',
-            'actionName'       => 'initAuthorizeDotNetCheckout',
-            'clientKey'      => $clientKey,
-            'apiLoginID'       => $authArgs['merchantAuthentication']['name'],
-            'formToken'        => $formToken,
-            'scriptUrl'             => self::getAccpetJsUrl(),
-            'actionUrl'      => $this->getActionUrl(),
-            'submission_id'    => $submission->id,
-            // 'checkout_data'       => $checkoutData,
-            'transaction_hash' => $submission->submission_hash,
-            'message'          => __('Authorize Do net Checkout button is loading. Please wait ....', 'wp-payment-form-pro'),
-            'result'           => [
-                'insert_id' => $submission->id
-            ]
+            'message' => __('You are redirecting to Billplz.com to complete the purchase. Please wait while you are redirecting....', 'wp-payment-form-pro'),
+            'call_next_method' => 'normalRedirect',
+            'redirect_url' => $this->getSuccessURL($form, $submission),
         ], 200);
     }
 
+    public function getLineItems($submission)
+    {
+        $orderItemsModel = new OrderItem();
+        $lineItems = $orderItemsModel->getOrderItems($submission->id);
+        $hasLineItems = count($lineItems) ? true : false;
+
+        if (!$hasLineItems) {
+           wp_send_json_error(array(
+                'message' => 'AuthorizeDotNet payment method requires at least one line item',
+                'payment_error' => true,
+                'type' => 'error',
+                'form_events' => [
+                    'payment_failed'
+                ]
+            ), 423);
+        }
+        $lineItems = array();
+        $submissionItems = $submission->items;
+        $i = 1;
+        foreach ($submissionItems as $item) {
+            $lineItems[] = array(
+                'itemId' => $i,
+                'name' => $item['name'],
+                'description' => $item['description'],
+                'quantity' => $item['quantity'],
+                'unitPrice' => number_format($item['unitPrice'] / 100, 2)
+            );
+            $i++;
+        }
+        return $lineItems;
+    }
+
+    public function validateCurrency($submission)
+    {
+        $merchantDetailsReq = array(
+            'getMerchantDetailsRequest' => array(
+                'merchantAuthentication' => $this->getAuthArgs($submission->form_id)['merchantAuthentication']
+            )
+        );
+
+        $response = (new API())->makeApiCall($merchantDetailsReq, $submission->form_id, 'POST');
+        if (isset($response['success']) && !$response['success']) {
+            wp_send_json_error(array('message' => $response['msg']), 423);
+        }
+
+        $currencies = $response['data']['currencies'];
+        $currency = $submission->currency;
+
+        if (!in_array($currency, $currencies)) {
+            wp_send_json_error(array('message' => __('Currency is not supported by The merchant Account', 'authorize-dotnet-for-paymattic')), 423);
+        }
+        return;
+    }
     public static function getAuthArgs($formId)
     {
         $apiLoginId = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())->getApiLoginId($formId);
@@ -409,8 +355,8 @@ class AuthorizeDotNetProcessor
             'updated_at' => current_time('Y-m-d H:i:s')
         );
         $transactionModel->where('id', $transaction->id)->update($data);
-
         $transaction = $transactionModel->getTransaction($transaction->id);
+
         SubmissionActivity::createActivity(array(
             'form_id' => $transaction->form_id,
             'submission_id' => $transaction->submission_id,
@@ -419,7 +365,7 @@ class AuthorizeDotNetProcessor
             'content' => sprintf(__('Transaction Marked as paid and AuthorizeDotNet Transaction ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $data['charge_id'])
         ));
 
-        do_action('wppayform/form_payment_success_AuthorizeDotNet', $submission, $transaction, $transaction->form_id, $updateData);
+        do_action('wppayform/form_payment_success_authorizedotnet', $submission, $transaction, $transaction->form_id, $updateData);
         do_action('wppayform/form_payment_success', $submission, $transaction, $transaction->form_id, $updateData);
     }
 
@@ -431,7 +377,7 @@ class AuthorizeDotNetProcessor
         // } else {
         //     wp_enqueue_script('wppayform_authorizedotnet', 'https://jstest.authorize.net/v3/AcceptUI.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
         // }
-        wp_enqueue_script('wppayform_authorizedotnet_handler', AuthorizeDotNet_FOR_PAYMATTIC_URL . 'assets/js/authorizedotnet-handler.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
+        // wp_enqueue_script('wppayform_authorizedotnet_handler', AuthorizeDotNet_FOR_PAYMATTIC_URL . 'assets/js/authorizedotnet-handler.js', ['jquery'], AuthorizeDotNet_FOR_PAYMATTIC_VERSION);
     }
 
     public function validateSubscription($paymentItems)

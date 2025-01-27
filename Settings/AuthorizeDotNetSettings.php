@@ -183,7 +183,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'placeholder' => __('Live Client Key', 'authorizedotnet-for-paymattic')
             ),
             'desc' => array(
-                'value' => '<p>See our <a href="https://paymattic.com/docs/how-to-integrate-authorizedotnet-in-wordpress" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup.</p>',
+                'value' => '<p>See our <a href="#" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup.</p>',
                 'type' => 'html_attr',
                 'placeholder' => __('Description', 'authorizedotnet-payment-for-paymattic')
             ),
