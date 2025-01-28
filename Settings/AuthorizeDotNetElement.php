@@ -15,7 +15,7 @@ class AuthorizeDotNetElement extends BaseComponent
 
     public function __construct()
     {
-        parent::__construct('authorizedotnet_gateway_element', 8);
+        parent::__construct('authorizedotnet_gateway_element', 12);
 
         add_action('wppayform/validate_gateway_api_' . $this->gateWayName, array($this, 'validateApi'));
         add_filter('wppayform/validate_gateway_api_' . $this->gateWayName, function ($data, $form) {

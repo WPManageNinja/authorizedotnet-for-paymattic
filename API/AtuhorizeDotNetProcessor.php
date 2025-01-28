@@ -75,10 +75,11 @@ class AuthorizeDotNetProcessor
         }
         // Now We have to analyze the elements and return our payment method
         foreach ($elements as $element) {
-            if ((isset($element['type']) && $element['type'] == 'AuthorizeDotNet_gateway_element')) {
-                return 'AuthorizeDotNet';
+            if ((isset($element['type']) && $element['type'] == 'authorizedotnet_gateway_element')) {
+                return 'authorizedotnet';
             }
         }
+ 
         return $paymentMethod;
     }
 
@@ -138,66 +139,19 @@ class AuthorizeDotNetProcessor
         // get authorizeDataValuye and authorizeDataDescriptor from fromData with sanitize_text_field
         $authorizeDataValue = sanitize_text_field($formData['authorizeDataValue']);
         $authorizeDataDescriptor = sanitize_text_field($formData['authorizeDataDescriptor']);
+
+        if (!$authorizeDataValue) {
+            wp_send_json_error(
+                array(
+                    'message' => 'No authrizeDataValue provide, necessary for payment with authorizeDotNet',
+                    'type' => 'error',
+                ), 423
+            );
+        }
        
         // currency validate and get currency code
         $this->validateCurrency($submission);
 
-        // truncate submissionhash to 18 characters for refId
-        $refId = substr($submission->submission_hash, 0, 20);
-        $createTransactionRequest = array(
-            'createTransactionRequest' => array(
-                'merchantAuthentication' => $authArgs['merchantAuthentication'],
-                'refId' => $refId, // truncate to 20 characters
-                'transactionRequest' => array(
-                    'transactionType' => 'authCaptureTransaction',
-                    'amount' => number_format( $submission->payment_total / 100, 2),
-                    'payment' => array(
-                        'opaqueData' => array(
-                            'dataDescriptor' => $authorizeDataDescriptor,
-                            'dataValue' => $authorizeDataValue
-                        )
-                    ),
-                    'lineItems' => $this->getLineItems($submission),
-                    'customerIP' => $_SERVER['REMOTE_ADDR'],
-                )
-            )
-        );
-
-       $response = (new API())->makeApiCall($createTransactionRequest, $form->ID, 'POST');
-        
-        if (isset($response['success']) && !$response['success']) {
-            wp_send_json_error(array('message' => $response['msg']), 423);
-        }
-
-        $data = $response['data'];
-        $transactionResponse = $data['transactionResponse'];
-        $refId = $data['refId'];
-        $responseCode = $transactionResponse['responseCode'];
-        if (1 == intval($responseCode)) {
-            // get the last four digits from the accountNumber
-            $cardlast4 = substr($transactionResponse['accountNumber'], -4);
-
-            $updateData = array(
-                'card_last_4' => $cardlast4,
-                'charge_id' => $transactionResponse['transHash'],
-                'payment_note' => json_encode($data),
-                'payment_status' => 'paid'
-            );
-
-            $this->markAsPaid('paid', $updateData, $transaction);
-
-        }
-
-        # Tell the client to handle the action
-        wp_send_json_success([
-            'message' => __('You are redirecting to Billplz.com to complete the purchase. Please wait while you are redirecting....', 'wp-payment-form-pro'),
-            'call_next_method' => 'normalRedirect',
-            'redirect_url' => $this->getSuccessURL($form, $submission),
-        ], 200);
-    }
-
-    public function getLineItems($submission)
-    {
         $orderItemsModel = new OrderItem();
         $lineItems = $orderItemsModel->getOrderItems($submission->id);
         $hasLineItems = count($lineItems) ? true : false;
@@ -212,20 +166,240 @@ class AuthorizeDotNetProcessor
                 ]
             ), 423);
         }
-        $lineItems = array();
-        $submissionItems = $submission->items;
-        $i = 1;
-        foreach ($submissionItems as $item) {
-            $lineItems[] = array(
-                'itemId' => $i,
-                'name' => $item['name'],
-                'description' => $item['description'],
-                'quantity' => $item['quantity'],
-                'unitPrice' => number_format($item['unitPrice'] / 100, 2)
+
+        // truncate submissionhash to 18 characters for refId
+        $refId = substr($submission->submission_hash, 0, 20);
+        $createTransactionRequest = array(
+            'createTransactionRequest' => array(
+                'merchantAuthentication' => $authArgs['merchantAuthentication'],
+                'refId' => $refId, // truncate to 20 characters
+                'transactionRequest' => array(
+                    'transactionType' => 'authCaptureTransaction',
+                    'amount' => number_format( $submission->payment_total / 100, 2, '.', ''),
+                    'payment' => array(
+                        'opaqueData' => array(
+                            'dataDescriptor' => $authorizeDataDescriptor,
+                            'dataValue' => $authorizeDataValue
+                        )
+                    ),
+                    'lineItems' => $this->getOrderItems($lineItems)
+                )
+            )
+        );
+
+        $tax = $this->getFormattedTax($lineItems);
+
+        if ($tax) {
+            $createTransactionRequest['createTransactionRequest']['transactionRequest']['tax'] = $tax;
+        }
+
+        // shipping address
+        $firstName = '';
+        $lastName = '';
+        $addressInput = $formData['address_input'] ?? '';
+        $address = '';
+        $city = '';
+        $state = '';
+        $zip = '';
+        $country = '';
+
+        if ($formData['customer_name']) {
+            $customerName = explode(' ', $formData['customer_name']);
+            $firstName = $customerName[0];
+            $lastName = $customerName[1];
+        }
+        if ($addressInput) {
+            $address = $addressInput['address_line_1'] . $addressInput['address_line_2'] ?? '';
+            $city = $addressInput['city'] ?? '';
+            $state = $addressInput['state'] ?? '';
+            $zip = $addressInput['zip_code'] ?? '';
+            $country = $addressInput['country'] ?? '';
+        }
+
+        $createTransactionRequest['createTransactionRequest']['transactionRequest']['shipTo'] = array(
+            'firstName' => $firstName,
+            'lastName' => $lastName,
+            'address' => $address,
+            'city' => $city,
+            'state' => $state,
+            'zip' => $zip,
+            'country' => $country
+        );
+
+        $createTransactionRequest['createTransactionRequest']['transactionRequest']['customerIP'] = $_SERVER['REMOTE_ADDR'];
+            
+
+       $response = (new API())->makeApiCall($createTransactionRequest, $form->ID, 'POST');
+        
+        if (isset($response['success']) && !$response['success']) {
+            wp_send_json_error(array('message' => $response['msg']), 423);
+        }
+
+        $data = $response['data'];
+        $transactionResponse = $data['transactionResponse'];
+        $refId = $data['refId'];
+        $responseCode = $transactionResponse['responseCode'] ?? 0;
+    
+        if (1 == intval($responseCode)) {
+            // get the last four digits from the accountNumber
+            $cardlast4 = substr($transactionResponse['accountNumber'], -4);
+            $updateData = array(
+                'card_last_4' => $cardlast4,
+                'charge_id' => $transactionResponse['transId'],
+                'payment_note' => json_encode($data),
+                'status' => 'paid'
             );
+
+            // dd('updating data on paid', $updateData, $response);
+            $this->markAsPaid('paid', $updateData, $transaction);
+
+        } else if (4 == intval($responseCode)) {
+            // error
+            $updateData = array(
+                'charge_id' => $transactionResponse['transId'],
+                'payment_note' => json_encode($data),
+                'card_last_4' => substr($transactionResponse['accountNumber'], -4),
+                'status' => 'on-hold',
+            );
+
+            $transactionModel = new Transaction();
+            $transactionModel->where('id', $transaction->id)->update($updateData);
+
+            $submissionModel = new Submission();
+            $submission = $submissionModel->getSubmission($transaction->submission_id);
+            $submissionData = array(
+                'payment_status' => 'on-hold',
+                'updated_at' => current_time('Y-m-d H:i:s')
+            );
+
+            $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
+
+            SubmissionActivity::createActivity(array(
+                'form_id' => $transaction->form_id,
+                'submission_id' => $transaction->submission_id,
+                'type' => 'info',
+                'created_by' => 'PayForm Bot',
+                'content' => sprintf(__('Transaction Marked as on-hold as  the ransaction is held for review with Transaction ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $data['charge_id'])
+            ));
+
+            wp_send_json_success(array(
+                'message' => "Payment is on hold for review",
+                'call_next_method' => 'normalRedirect',
+                'redirect_url' => $this->getSuccessURL($form, $submission),
+            ), 200);
+        } else {
+            // error
+            $updateData = array(
+                'status' => 'failed'
+            );
+
+            $transactionModel = new Transaction();
+            $transactionModel->where('id', $transaction->id)->update($updateData);
+
+            $submissionModel = new Submission();
+            $submission = $submissionModel->getSubmission($transaction->submission_id);
+            $submissionData = array(
+                'payment_status' => 'failed',
+                'updated_at' => current_time('Y-m-d H:i:s')
+            );
+    
+            $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
+  
+            wp_send_json_error(array(
+                'message' => "Payment Failed/Declined with response code: " . $responseCode,
+                'type' => 'error',
+                'redirect_url' => $this->getSuccessURL($form, $submission)
+            ), 423);
+
+        }
+
+        # Tell the client to handle the action
+        wp_send_json_success([
+            'message' => __('Payment successfull!', 'wp-payment-form-pro'),
+            'call_next_method' => 'normalRedirect',
+            'redirect_url' => $this->getSuccessURL($form, $submission),
+        ], 200);
+    }
+
+    public function getOrderItems($items)
+    {
+        $i = 1;
+        $total = 0;
+        $name = '';
+        $description = '';
+        $totalorderItems = 0;
+        // count the number of in the items, which are not tax items
+        foreach ($items as $item) {
+            if ($item->type != 'tax_line') {
+                $totalorderItems++;
+            }
+        }
+
+        foreach ($items as $item) {
+            if ($item->type != 'tax_line') {
+                $name .= $item->item_name;
+                $description .= $item->item_name . ' qty: ' . $item->quantity;
+                $total += intval($item->line_total);
+
+               if($totalorderItems > 1 && $i < $totalorderItems) {
+                    $name .= ', ';
+                    $description .= ', ';
+                }
+            }
             $i++;
         }
-        return $lineItems;
+
+        return array(
+            'lineItem' => array(
+                'itemId' => 1,
+                'name' => $name,
+                'description' => $description,
+                'quantity' => 1,
+                'unitPrice' => number_format($total / 100, 2, '.', ''),
+            )
+        );
+    }
+
+    public function getFormattedTax($items)
+    {
+        // count the number of tax items in the items
+        $taxItems = 0;
+        foreach ($items as $item) {
+            if ($item->type == 'tax_line') {
+                $taxItems++;
+            }
+        }
+
+        if (!$taxItems) {
+            return null;
+        }
+
+        // formatted a tax item with all the tax items, where name will be the concatenated name of all the tax items, amount will be the total amount of all the tax items
+        $name = '';
+        $total = 0;
+
+        foreach ($items as $item) {
+            if ($item->type == 'tax_line') {
+                // construct name and amount, add ' ' after each name, if it's not the last item
+               $name = $item->item_name;
+               $total += intval($item->line_total);
+
+               // add ',' if it's not the last item or items is more than 1
+                if ($taxItems > 1 && !end($items)) {
+                     $name .= ', ';
+                }
+            }
+        }
+
+        if (!$total) {
+            return null;
+        }
+
+        return array(
+            'amount' => number_format($total / 100, 2, '.', ''),
+            'name' => $name,
+        );
+        
     }
 
     public function validateCurrency($submission)
@@ -338,10 +512,9 @@ class AuthorizeDotNetProcessor
         $submission = $submissionModel->getSubmission($transaction->submission_id);
 
         $formDataRaw = $submission->form_data_raw;
-        $formDataRaw['AuthorizeDotNet_ipn_data'] = $updateData;
+        $formDataRaw['authorizedotnet_ipn_data'] = $updateData;
         $submissionData = array(
             'payment_status' => $status,
-            'form_data_raw' => maybe_serialize($formDataRaw),
             'updated_at' => current_time('Y-m-d H:i:s')
         );
 
@@ -349,8 +522,9 @@ class AuthorizeDotNetProcessor
 
         $transactionModel = new Transaction();
         $data = array(
-            'charge_id' => $updateData['charge_id'],
-            'payment_note' => $updateData['payment_note'],
+            'charge_id' => $updateData['charge_id'] ?? '',
+            'payment_note' => $updateData['payment_note'] ?? '',
+            'card_last_4' => $updateData['card_last_4'] ?? '',
             'status' => $status,
             'updated_at' => current_time('Y-m-d H:i:s')
         );
