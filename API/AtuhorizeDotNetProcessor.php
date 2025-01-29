@@ -58,12 +58,12 @@ class AuthorizeDotNetProcessor
 
     public function addTransactionUrl($transactions, $submissionId)
     {
-        foreach ($transactions as $transaction) {
-            if ($transaction->payment_method == 'AuthorizeDotNet' && $transaction->charge_id) {
-                $transactionUrl = Arr::get(unserialize($transaction->payment_note), '_links.dashboard.href');
-                $transaction->transaction_url =  $transactionUrl;
-            }
-        }
+        // foreach ($transactions as $transaction) {
+        //     if ($transaction->payment_method == 'authorizedotnet' && $transaction->charge_id) {
+        //         $transactionUrl = Arr::get(unserialize($transaction->payment_note), '_links.dashboard.href');
+        //         $transaction->transaction_url =  $transactionUrl;
+        //     }
+        // }
         return $transactions;
     }
 
@@ -114,7 +114,7 @@ class AuthorizeDotNetProcessor
                 $url = get_permalink(intval($confirmation['customPage']));
             }
             $url = add_query_arg(array(
-                'payment_method' => 'AuthorizeDotNet'
+                'payment_method' => 'authorizedotnet'
             ), $url);
             return PlaceholderParser::parse($url, $submission);
         }
@@ -123,24 +123,24 @@ class AuthorizeDotNetProcessor
         if (isset($globalSettings['confirmation']) && $globalSettings['confirmation']) {
             return add_query_arg(array(
                 'wpf_submission' => $submission->submission_hash,
-                'payment_method' => 'AuthorizeDotNet'
+                'payment_method' => 'authorizedotnet'
             ), get_permalink(intval($globalSettings['confirmation'])));
         }
         // In case we don't have global settings
         return add_query_arg(array(
             'wpf_submission' => $submission->submission_hash,
-            'payment_method' => 'AuthorizeDotNet'
+            'payment_method' => 'authorizedotnet'
         ), home_url());
     }
 
     public function handleRedirect($transaction, $submission, $form, $formData, $methodSettings)
     {
         $authArgs = $this->getAuthArgs($form->ID);
-        // get authorizeDataValuye and authorizeDataDescriptor from fromData with sanitize_text_field
-        $authorizeDataValue = sanitize_text_field($formData['authorizeDataValue']);
-        $authorizeDataDescriptor = sanitize_text_field($formData['authorizeDataDescriptor']);
+        // get authorizeDataValuye and dataDescriptor from fromData with sanitize_text_field
+        $dataValue = sanitize_text_field($formData['dataValue']);
+        $dataDescriptor = sanitize_text_field($formData['dataDescriptor']);
 
-        if (!$authorizeDataValue) {
+        if (!$dataValue) {
             wp_send_json_error(
                 array(
                     'message' => 'No authrizeDataValue provide, necessary for payment with authorizeDotNet',
@@ -178,8 +178,8 @@ class AuthorizeDotNetProcessor
                     'amount' => number_format( $submission->payment_total / 100, 2, '.', ''),
                     'payment' => array(
                         'opaqueData' => array(
-                            'dataDescriptor' => $authorizeDataDescriptor,
-                            'dataValue' => $authorizeDataValue
+                            'dataDescriptor' => $dataDescriptor,
+                            'dataValue' => $dataValue
                         )
                     ),
                     'lineItems' => $this->getOrderItems($lineItems)
@@ -209,7 +209,7 @@ class AuthorizeDotNetProcessor
             $lastName = $customerName[1];
         }
         if ($addressInput) {
-            $address = $addressInput['address_line_1'] . $addressInput['address_line_2'] ?? '';
+            $address = substr($addressInput['address_line_1'] . $addressInput['address_line_2'], 0, 60) ?? '';
             $city = $addressInput['city'] ?? '';
             $state = $addressInput['state'] ?? '';
             $zip = $addressInput['zip_code'] ?? '';
@@ -227,10 +227,9 @@ class AuthorizeDotNetProcessor
         );
 
         $createTransactionRequest['createTransactionRequest']['transactionRequest']['customerIP'] = $_SERVER['REMOTE_ADDR'];
-            
 
        $response = (new API())->makeApiCall($createTransactionRequest, $form->ID, 'POST');
-        
+ 
         if (isset($response['success']) && !$response['success']) {
             wp_send_json_error(array('message' => $response['msg']), 423);
         }
@@ -352,8 +351,8 @@ class AuthorizeDotNetProcessor
         return array(
             'lineItem' => array(
                 'itemId' => 1,
-                'name' => $name,
-                'description' => $description,
+                'name' => 'See the description!',
+                'description' => substr($description,0,254),
                 'quantity' => 1,
                 'unitPrice' => number_format($total / 100, 2, '.', ''),
             )
@@ -375,18 +374,18 @@ class AuthorizeDotNetProcessor
         }
 
         // formatted a tax item with all the tax items, where name will be the concatenated name of all the tax items, amount will be the total amount of all the tax items
-        $name = '';
+        $description = '';
         $total = 0;
 
         foreach ($items as $item) {
             if ($item->type == 'tax_line') {
                 // construct name and amount, add ' ' after each name, if it's not the last item
-               $name = $item->item_name;
+               $description = $item->item_name;
                $total += intval($item->line_total);
 
                // add ',' if it's not the last item or items is more than 1
                 if ($taxItems > 1 && !end($items)) {
-                     $name .= ', ';
+                     $description .= ', ';
                 }
             }
         }
@@ -397,7 +396,8 @@ class AuthorizeDotNetProcessor
 
         return array(
             'amount' => number_format($total / 100, 2, '.', ''),
-            'name' => $name,
+            'name' => 'See the description!',
+            'description' => substr($description, 0, 254)
         );
         
     }
@@ -493,7 +493,7 @@ class AuthorizeDotNetProcessor
             'form_id' => $submission->form_id,
             'submission_id' => $submission->id,
             'type' => 'info',
-            'created_by' => 'AuthorizeDotNet',
+            'created_by' => 'Authorizedotnet',
             'content' => $activityContent
         ));
     }

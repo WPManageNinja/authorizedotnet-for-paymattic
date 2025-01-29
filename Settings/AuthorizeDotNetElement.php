@@ -87,21 +87,11 @@ class AuthorizeDotNetElement extends BaseComponent
             return;
         }
 
-        $checkOutStyle = Arr::get($fieldOptions, 'checkout_display_style.style', 'stripe_checkout');
+        $authSettings = new AuthorizeDotNetSettings();
 
-        $inputId = 'wpf_input_' . $form->ID . '_' . $this->elementName;
-        // add_filter('wppayform/checkout_vars', function ($vars) use ($checkOutStyle, $form, $fieldOptions, $inputId) {
-        //     if ($vars['form_id'] == $form->ID) {
-        //         $vars['stripe_checkout_style'] = $checkOutStyle;
-        //         $vars['stripe_verify_zip'] = Arr::get($fieldOptions, 'verify_zip');
-        //         $vars['stripe_billing_info'] = Arr::get($fieldOptions, 'checkout_display_style.require_billing_info');
-        //         $vars['stripe_shipping_info'] = Arr::get($fieldOptions, 'checkout_display_style.require_shipping_info');
-        //         $vars['stripe_element_id'] = $inputId;
-        //     }
-        //     return $vars;
-        // });
+        $settings = $authSettings->getSettings();
+        $isLive = $authSettings::isLive();
 
-        $isLive = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())::isLive();
         $acceptJs = '';
         if ($isLive) {
             $acceptJs =  'https://js.authorize.net/v3/AcceptUI.js';
@@ -116,19 +106,19 @@ class AuthorizeDotNetElement extends BaseComponent
         $attributes = array(
             'data-apiLoginID' => $apiLoginId,
             'data-clientKey' => $clientKey,
-            'data-acceptUIFormBtnTxt' => $fieldOptions['accept_ui_form_btn_txt'] ?? 'Pay with AtuhorizeDotNet',
+            'data-acceptUIFormBtnTxt' => $settings['button_text'] ?? 'Pay with AtuhorizeDotNet',
             'data-acceptUIFormHeaderTxt' => "Card Information",
             'data-paymentOptions' => '{"showCreditCard": true}',
             'data-responseHandler'=> "responseHandler",
             'class' => 'AcceptUI',
             'style' => 'display:none',
         ); ?>
-        <div class="wpf_form_group wpf_item_<?php echo esc_attr($element['id']); ?>>">
-           <input type="hidden" name="authorizeDataValue" id="authorizeDataValue" />
-           <input type="hidden" name="authorizeDataDescriptor" id="authorizeDataDescriptor" />
-           <button <?php $this->printAttributes($attributes); ?>></button>
-           <div class="wpf_authorize-errors" role="alert"></div>
-        </div>
+       <div class="wpf_form_group wpf_item_<?php echo esc_attr($element['id']); ?>">
+        <input type="hidden" name="dataValue" id="dataValue" />
+        <input type="hidden" name="dataDescriptor" id="dataDescriptor" />
+        <button <?php $this->printAttributes($attributes); ?>></button>
+        <div class="wpf_authorize-errors" role="alert"></div>
+    </div>
 <?php
 
         echo '<input data-wpf_payment_method="authorizedotnet" type="hidden" name="__authorizedotnet_payment_gateway" value="authorizedotnet" />';

@@ -62,6 +62,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
             'live_transaction_key' => '',
             'sandbox_client_key' => '',
             'live_client_key' => '',
+            'button_text' => __('Pay with authorizedotnet', 'authorizedotnet-payment-for-paymattic'),
             'update_available' => $updateAvailable
         );
     }
@@ -191,6 +192,12 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'label' => __('Live Client Key', 'authorizedotnet-for-paymattic'),
                 'type' => 'live_pub_key',
                 'placeholder' => __('Live Client Key', 'authorizedotnet-for-paymattic')
+            ),
+            'button_text' => array(
+                'value' => __('Pay with authorizedotnet', 'authorizedotnet-payment-for-paymattic'),
+                'label' => __('Button Text', 'authorizedotnet-payment-for-paymattic'),
+                'type' => 'text',
+                'placeholder' => __('Authorizedotnet Button Text', 'authorizedotnet-payment-for-paymattic')
             ),
             'desc' => array(
                 'value' => '<p>See our <a href="#" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup.</p>',
