@@ -11,6 +11,7 @@ use WPPayForm\App\Models\Transaction;
 use WPPayForm\App\Models\OrderItem;
 use WPPayForm\App\Models\Form;
 use WPPayForm\App\Models\Submission;
+use WPPayForm\App\Models\Subscription;
 use WPPayForm\App\Services\PlaceholderParser;
 use WPPayForm\App\Services\ConfirmationHelper;
 use WPPayForm\App\Models\SubmissionActivity;
@@ -40,7 +41,7 @@ class AuthorizeDotNetProcessor
         // add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
         // add_action('wppayform_ipn_AuthorizeDotNet_action_refunded', array($this, 'handleRefund'), 10, 3);
-        add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
+        // add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
         add_action('wppayform_load_checkout_js_' . $this->method, array($this, 'addCheckoutJs'), 10, 3);
     }
 
@@ -96,7 +97,7 @@ class AuthorizeDotNetProcessor
         $transaction = $transactionModel->getTransaction($transactionId);
 
         $submission = (new Submission())->getSubmission($submissionId);
-        $this->handleRedirect($transaction, $submission, $form, $form_data, $paymentMode);
+        $this->handleRedirect($transaction, $submission, $form, $form_data, $paymentMode, $hasSubscriptions);
     }
 
     private function getSuccessURL($form, $submission)
@@ -133,12 +134,19 @@ class AuthorizeDotNetProcessor
         ), home_url());
     }
 
-    public function handleRedirect($transaction, $submission, $form, $formData, $methodSettings)
+    public function handleRedirect($transaction, $submission, $form, $formData, $paymentMode, $hasSubscriptions)
     {
         $authArgs = $this->getAuthArgs($form->ID);
         // get authorizeDataValuye and dataDescriptor from fromData with sanitize_text_field
         $dataValue = sanitize_text_field($formData['dataValue']);
         $dataDescriptor = sanitize_text_field($formData['dataDescriptor']);
+
+        $payment = array(
+                        'opaqueData' => array(
+                            'dataDescriptor' => $dataDescriptor,
+                            'dataValue' => $dataValue
+                        )
+                    );
 
         if (!$dataValue) {
             wp_send_json_error(
@@ -150,13 +158,13 @@ class AuthorizeDotNetProcessor
         }
        
         // currency validate and get currency code
-        $this->validateCurrency($submission);
+        // $this->validateCurrency($submission);
 
         $orderItemsModel = new OrderItem();
         $lineItems = $orderItemsModel->getOrderItems($submission->id);
         $hasLineItems = count($lineItems) ? true : false;
 
-        if (!$hasLineItems) {
+        if (!$hasLineItems && !$hasSubscriptions) {
            wp_send_json_error(array(
                 'message' => 'AuthorizeDotNet payment method requires at least one line item',
                 'payment_error' => true,
@@ -165,6 +173,21 @@ class AuthorizeDotNetProcessor
                     'payment_failed'
                 ]
             ), 423);
+        }
+
+        if ($hasLineItems && $hasSubscriptions) {
+            wp_send_json_error(array(
+                'message' => 'AuthorizeDotNet payment method does not support both one time payment and subscriptions at once',
+                'payment_error' => true,
+                'type' => 'error',
+                'form_events' => [
+                    'payment_failed'
+                ]
+            ), 423);
+        }
+
+        if ($hasSubscriptions) {
+            $this->handleSubscription($submission, $form, $formData, $lineItems, $authArgs, $dataValue, $dataDescriptor);
         }
 
         // truncate submissionhash to 18 characters for refId
@@ -176,12 +199,7 @@ class AuthorizeDotNetProcessor
                 'transactionRequest' => array(
                     'transactionType' => 'authCaptureTransaction',
                     'amount' => number_format( $submission->payment_total / 100, 2, '.', ''),
-                    'payment' => array(
-                        'opaqueData' => array(
-                            'dataDescriptor' => $dataDescriptor,
-                            'dataValue' => $dataValue
-                        )
-                    ),
+                    'payment' => $payment,
                     'lineItems' => $this->getOrderItems($lineItems)
                 )
             )
@@ -226,7 +244,7 @@ class AuthorizeDotNetProcessor
             'country' => $country
         );
 
-        $createTransactionRequest['createTransactionRequest']['transactionRequest']['customerIP'] = $_SERVER['REMOTE_ADDR'];
+       $createTransactionRequest['createTransactionRequest']['transactionRequest']['customerIP'] = $_SERVER['REMOTE_ADDR'];
 
        $response = (new API())->makeApiCall($createTransactionRequest, $form->ID, 'POST');
  
@@ -238,6 +256,10 @@ class AuthorizeDotNetProcessor
         $transactionResponse = $data['transactionResponse'];
         $refId = $data['refId'];
         $responseCode = $transactionResponse['responseCode'] ?? 0;
+
+        if ($refId != substr($submission->submission_hash, 0, 20)) {
+            wp_send_json_error(array('message' => 'Non varified response'), 423);
+        }
     
         if (1 == intval($responseCode)) {
             // get the last four digits from the accountNumber
@@ -312,14 +334,186 @@ class AuthorizeDotNetProcessor
 
         }
 
-        # Tell the client to handle the action
         wp_send_json_success([
-            'message' => __('Payment successfull!', 'wp-payment-form-pro'),
+            'message' => __('Payment successfull!', 'authorizedotnet-for-paymattic'),
             'call_next_method' => 'normalRedirect',
             'redirect_url' => $this->getSuccessURL($form, $submission),
         ], 200);
     }
 
+    public function handleSubscription($submission, $form, $formData, $lineItems, $authArgs, $dataValue, $dataDescriptor)
+    {
+
+        $subscription = $this->getValidSubscription($submission);
+
+        $authArgs = $this->getAuthArgs($form->ID);
+        $payment = array(
+            'opaqueData' => array(
+                'dataDescriptor' => $dataDescriptor,
+                'dataValue' => $dataValue
+            )
+        );
+
+         // billing address
+         $firstName = '';
+         $lastName = '';
+         $addressInput = $formData['address_input'] ?? '';
+         $address = '';
+         $city = '';
+         $state = '';
+         $zip = '';
+         $country = '';
+ 
+         if ($formData['customer_name']) {
+             $customerName = explode(' ', $formData['customer_name']);
+             $firstName = $customerName[0];
+             $lastName = $customerName[1];
+         }
+         if ($addressInput) {
+             $address = substr($addressInput['address_line_1'] . $addressInput['address_line_2'], 0, 60) ?? '';
+             $city = $addressInput['city'] ?? '';
+             $state = $addressInput['state'] ?? '';
+             $zip = $addressInput['zip_code'] ?? '';
+             $country = $addressInput['country'] ?? '';
+         }
+
+        $interval = $subscription->billing_interval;
+
+        if ('month' == $subscription->billing_interval) {
+            $interval = 'months';
+        } else if ('day' == $subscription->billing_interval) {
+            $interval = 'days';
+        } else {
+            wp_send_json_error(array(
+                'message' => 'Authorize dot net payment method does not support the interval: ' . $subscription->billing_interval,
+                'call_next_method' => 'normalRedirect',
+                'redirect_url' => $this->getSuccessURL($form, $submission)
+            ), 423);
+        }
+
+        $intervalCount = Arr::get($subscription->original_plan, 'interval_count', 1);
+
+        $trailDays = intval($subscription->trial_days);
+
+        
+
+        // make sure startDate is greater than current date , if no trial days add 5 minutes
+        if ($trailDays) {
+            $startDate = date('Y-m-d', strtotime('+' . $trailDays . ' days', strtotime(current_time('mysql'))));
+        } else {
+            $startDate = date('Y-m-d', strtotime('+5 minutes', strtotime(current_time('mysql'))));
+        }
+
+        
+        $amount = number_format($subscription->recurring_amount / 100, 2, '.', '');
+        $totalOccurrences = Arr::get($subscription, 'bill_times', 9999) ? Arr::get($subscription, 'bill_times', 9999) : 9999;
+
+        // add sign up fee to the amount if it's there
+        $trialAmount = 0.00;
+        if ($subscription->initial_amount) {
+            $trialAmount = number_format($subscription->initial_amount / 100, 2, '.', '');
+        }
+
+        $trialOccurrences = $trailDays || $trialAmount ? 1 : 0;
+
+        $subscriptionArgs = array(
+            'name' => $subscription->item_name,
+            'paymentSchedule' => array(
+                'interval' => array(
+                    'length' => $intervalCount,
+                    'unit' => $interval
+                ),
+                'startDate' => $startDate,
+                'totalOccurrences' => $totalOccurrences,
+                'trialOccurrences' => $trialOccurrences,
+            ),
+            'amount' => $amount,
+            'trialAmount' => $trialAmount,
+            'payment' => $payment,
+            'billTo' => array(
+                'firstName' => $firstName,
+                'lastName' => $lastName,
+                'address' => $address,
+                'city' => $city,
+                'state' => $state,
+                'zip' => $zip,
+                'country' => $country,
+            ),
+        );
+
+        $createSubscriptionReq = array(
+            'ARBCreateSubscriptionRequest' => array(
+                'merchantAuthentication' => $authArgs['merchantAuthentication'],
+                'refId' => substr($submission->submission_hash, 0, 20),
+                'subscription' => $subscriptionArgs,
+            )
+        );
+
+        // do the api call
+        $response = (new API())->makeApiCall($createSubscriptionReq, $form->ID, 'POST');
+
+        if (isset($response['success']) && !$response['success']) {
+            wp_send_json_error(array('message' => $response['msg']), 423);
+        }
+
+        $data = $response['data'];
+
+        $refId = $data['refId'];
+
+        if ($refId != substr($submission->submission_hash, 0, 20)) {
+            wp_send_json_error(array('message' => 'Non varified response'), 423);
+        }
+
+        $vendorSubId = $data['subscriptionId'];
+        $customerId = $data['profile']['customerProfileId'];
+        
+        // update the subscription with status and subsid and customer id
+        $updateData = array(
+            'status' => 'active',
+            'vendor_subscriptipn_id' => $vendorSubId,
+            'vendor_customer_id' => $customerId,
+            'vendor_response' => json_encode($data)
+        );
+
+        $subscriptionModel = new Subscription();
+        $subscriptionModel->where('id', $subscription->id)->update($updateData);
+
+
+        wp_send_json_success([
+            'message' => __('Subscription created successfully!', 'authorizedotnet-for-paymattic'),
+            'call_next_method' => 'normalRedirect',
+            'redirect_url' => $this->getSuccessURL($form, $submission),
+        ], 200);
+        
+    }
+
+    public function getValidSubscription($submission)
+    {
+        $subscriptionModel = new Subscription();
+        $subscriptions = $subscriptionModel->getSubscriptions($submission->id);
+
+        $validSubscriptions = [];
+        foreach ($subscriptions as $subscriptionItem) {
+            if ($subscriptionItem->recurring_amount) {
+                $validSubscriptions[] = $subscriptionItem;
+            }
+        }
+
+        if ($validSubscriptions && count($validSubscriptions) > 1) {
+            wp_send_json_error(array(
+                'message' => 'Authorize dot net payment method does not support more than 1 subscriptions',
+                'payment_error' => true,
+                'type' => 'error',
+                'form_events' => [
+                    'payment_failed'
+                ]
+            ), 423);
+            // Moneris Standard does not support more than 1 subscriptions
+        }
+
+        // We just need the first subscriptipn
+        return $validSubscriptions[0];
+    }
     public function getOrderItems($items)
     {
         $i = 1;
