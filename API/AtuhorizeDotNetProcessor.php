@@ -43,6 +43,12 @@ class AuthorizeDotNetProcessor
         // add_action('wppayform_ipn_AuthorizeDotNet_action_refunded', array($this, 'handleRefund'), 10, 3);
         // add_filter('wppayform/submitted_payment_items_' . $this->method, array($this, 'validateSubscription'), 10, 4);
         add_action('wppayform_load_checkout_js_' . $this->method, array($this, 'addCheckoutJs'), 10, 3);
+
+        // fetch all subscription entry wise
+        add_action('wppayform/subscription_settings_sync_square', array($this, 'makeSubscriptionSync'), 10, 2);
+
+         // cancel subscription
+         add_action('wppayform/subscription_settings_cancel_square', array($this, 'cancelSubscription'), 10, 3);
     }
 
 
@@ -478,6 +484,14 @@ class AuthorizeDotNetProcessor
         $subscriptionModel = new Subscription();
         $subscriptionModel->where('id', $subscription->id)->update($updateData);
 
+        // update submission payment_status as paid , because we have a subscription created, which might have a trial period
+        $submissionModel = new Submission();
+        $submissionData = array(
+            'payment_status' => 'paid',
+            'updated_at' => current_time('Y-m-d H:i:s')
+        );
+        $submissionModel->where('id', $submission->id)->update($submissionData);
+
 
         wp_send_json_success([
             'message' => __('Subscription created successfully!', 'authorizedotnet-for-paymattic'),
@@ -513,6 +527,111 @@ class AuthorizeDotNetProcessor
 
         // We just need the first subscriptipn
         return $validSubscriptions[0];
+    }
+
+    public function getSubscriptionFromAuthorize($subscription){
+        $subId = $subscription->vendor_subscriptipn_id;
+
+        if (!$subId) {
+            return null;
+        }
+
+        $authArgs = $this->getAuthArgs($subscription->form_id);
+        $getSubscriptionReq = array(
+            'ARBGetSubscriptionRequest' => array(
+                'merchantAuthentication' => $authArgs['merchantAuthentication'],
+                'subscriptionId' => $subId,
+                "includeTransactions" => true
+            )
+        );
+
+        $response = (new API())->makeApiCall($getSubscriptionReq, $subscription->form_id, 'POST');
+
+        if (isset($response['success']) && !$response['success']) {
+            return null;
+        }
+
+        return $response['data']['subscription'];
+    }
+
+    public function makeSubscriptionSync($formId, $submissionId)
+    {
+        if (!$submissionId) {
+            return;
+        }
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($submissionId);
+
+        $subscriptionModel = new Subscription();
+        $subscriptions = $subscriptionModel->getSubscriptions($submissionId);
+
+        if (!isset($subscriptions[0])) {
+            return 'No subscription Id found!';
+        };
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $submission->form_id,
+            'submission_id' => $submission->id,
+            'type' => 'activity',
+            'created_by' => 'Paymattic BOT',
+            'content' => __('Authorized recurring payments synced from upstream', 'wp-payment-form')
+        ));
+        
+        wp_send_json_success(array(
+            'message' => 'Successfully synced!'
+        ), 200);
+
+
+    }
+
+    public function cancelSubscription($formId, $submission, $subscription)
+    {
+        $subId = $subscription->vendor_subscriptipn_id;
+
+        if (!$subId) {
+            return null;
+        }
+
+        $authArgs = $this->getAuthArgs($subscription->form_id);
+        $getSubscriptionReq = array(
+            'ARBCancelSubscriptionRequest' => array(
+                'merchantAuthentication' => $authArgs['merchantAuthentication'],
+                'subscriptionId' => $subId,
+                "includeTransactions" => true
+            )
+        );
+
+        $response = (new API())->makeApiCall($getSubscriptionReq, $subscription->form_id, 'POST');
+
+        if (isset($response['success']) && !$response['success']) {
+            return null;
+        }
+
+        // subscription cancelled
+        $updateData = array(
+            'status' => 'cancelled'
+        );
+
+        $subscriptionModel = new Subscription();
+        $subscriptionModel->where('id', $subscription->id)->update($updateData);
+
+        // add activity
+        SubmissionActivity::createActivity(array(
+            'form_id' => $subscription->form_id,
+            'submission_id' => $subscription->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Subscription Cancelled of Subscription ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $subId)
+        ));
+
+        // trigger cancel event
+        do_action('wppayform_subscription_cancelled', $subscription);
+        do_action('wppayform_subscription_cancelled_' . $subscription->payment_method, $subscription);
+
+        wp_send_json_success(array(
+            'message' => 'Subscription cancelled!'
+        ), 200);
     }
     public function getOrderItems($items)
     {
