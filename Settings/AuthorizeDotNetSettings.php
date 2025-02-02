@@ -63,6 +63,8 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
             'sandbox_client_key' => '',
             'live_client_key' => '',
             'button_text' => __('Pay with authorizedotnet', 'authorizedotnet-payment-for-paymattic'),
+            'sandbox_signature_key' => '',
+            'live_signature_key' => '',
             'update_available' => $updateAvailable
         );
     }
@@ -199,6 +201,18 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'type' => 'text',
                 'placeholder' => __('Authorizedotnet Button Text', 'authorizedotnet-payment-for-paymattic')
             ),
+            'sandbox_signature_key' => array(
+                'value' => '',
+                'label' => __('Sandbox Signature Key', 'authorizedotnet-for-paymattic'),
+                'type' => 'test_pub_key',
+                'placeholder' => __('Sandbox Signature Key', 'authorizedotnet-for-paymattic')
+            ),
+            'live_signature_key' => array(
+                'value' => '',
+                'label' => __('Live Signature Key', 'authorizedotnet-for-paymattic'),
+                'type' => 'live_pub_key',
+                'placeholder' => __('Live Signature Key', 'authorizedotnet-for-paymattic')
+            ),
             'desc' => array(
                 'value' => '<p>See our <a href="#" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup.</p>',
                 'type' => 'html_attr',
@@ -269,6 +283,8 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         return $settings['sandbox_api_login_id'];
     }
 
+    
+
     public function getClientKey($formId = false)
     {
         $isLive = $this->isLive($formId);
@@ -292,4 +308,17 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
 
         return $settings['sandbox_transaction_key'];
     }
+
+    public function getSignatureKey($formId = false)
+    {
+        $isLive = $this->isLive($formId);
+        $settings = $this->getSettings();
+
+        if ($isLive) {
+            return $settings['live_signature_key'];
+        }
+
+        return $settings['sandbox_signature_key'];
+    }
+    
 }

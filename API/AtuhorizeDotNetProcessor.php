@@ -49,8 +49,13 @@ class AuthorizeDotNetProcessor
 
          // cancel subscription
          add_action('wppayform/subscription_settings_cancel_square', array($this, 'cancelSubscription'), 10, 3);
-    }
 
+         // ipns
+         add_action('wppayform_handle_authorize_transaction_ipn', array($this, 'handleTransactionIpn'), 10, 1);
+         add_action('wppayform_handle_authorize_subscription_ipn', array($this, 'handleSubscriptionIpn'), 10, 1);
+        //  add_action('wppayform_handle_authorize_customerProfile_ipn', array($this, 'makeSubscriptionSync'), 10, 1);
+
+    }
 
 
     protected function getPaymentMode($formId = false)
@@ -761,16 +766,6 @@ class AuthorizeDotNetProcessor
             return 'https://js.authorize.net/v3/AcceptUI.js';
         } else {
             return 'https://jstest.authorize.net/v3/AcceptUI.js';
-        }
-    }
-
-    public static function getActionUrl()
-    {
-        $isLive = (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())::isLive();
-        if ($isLive) {
-            return 'https://accept.authorize.net/payment/payment';
-        } else {
-            return 'https://test.authorize.net/payment/payment';
         }
     }
 

@@ -20,42 +20,62 @@ class IPN
 
     public function verifyIPN()
     {
-        if (!isset($_REQUEST['wpf_authorizedotnet_listener'])) {
-            return;
-        }
-
         // Check the request method is POST
         if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] != 'POST') {
             return;
         }
 
-        // Set initial post data to empty string
-        // $post_data = '';
+        // test if the request have a header with the name 'X-ANET-Signature'
+        if (!isset($_SERVER['HTTP_X_ANET_SIGNATURE'])) {
+            return;
+        }
 
-        // // Fallback just in case post_max_size is lower than needed
-        // if (ini_get('allow_url_fopen')) {
-        //     $post_data = file_get_contents('php://input');
-        // } else {
-        //     // If allow_url_fopen is not enabled, then make sure that post_max_size is large enough
-        //     ini_set('post_max_size', '12M');
-        // }
+        // Get all headers
+        $headers = getallheaders();
 
-        // $data =  json_decode($post_data);
+        // verify the reques with the signature key
+        $reqSignatureKey = Arr::get($headers, 'X-Anet-Signature', '');
+         // remove the prefix
+        if (strpos($reqSignatureKey, 'sha512=') === 0) {
+            $reqSignatureKey = substr($reqSignatureKey, strlen('sha512='));
+        }
+        
+        $mrchntSignatureKey =  (new \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())->getSignatureKey();
+  
 
-        // if (!property_exists($data, 'event')) {
-        //     $this->handleInvoicePaid($data);
-        // } else {
-        //     error_log("specific event");
-        //     error_log(print_r($data));
-        //     $this->handleIpn($data);
-        // }
+        // Get the post body
+        $post_data = file_get_contents('php://input');
 
-        // exit(200);
+        // Generate the HMAC-SHA512 hash
+        $generated_hash = strtoupper(hash_hmac('sha512', $post_data, $mrchntSignatureKey));
+
+        // Compare the signatures
+        $reqSignatureKey = strtoupper($reqSignatureKey);
+        if (!hash_equals($generated_hash, $reqSignatureKey)) {
+            error_log("Signature mismatch: expected $reqSignatureKey but got $generated_hash");
+            exit(200);
+        }
+    
+        $data =  json_decode($post_data);
+        if (!property_exists($data, 'eventType')) {
+            exit(200);
+        } else {
+            $this->handleIpn($data);
+        }
+
+        exit(200);
     }
 
     protected function handleIpn($data)
     {
-        //handle specific events in the future
+        $entityName = $data->payload->entityName;
+        
+        if (has_action('wppayform_handle_authorize_' . $entityName . '_ipn')) {
+            do_action('wppayform_handle_authorize_' . $entityName . '_ipn', $data);
+        } else {
+            exit(200);
+        }
+
     }
 
     protected function handleInvoicePaid($data)
