@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
 
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Transaction;
+use WPPayForm\App\Models\SubscriptionTransaction;
 use WPPayForm\App\Models\OrderItem;
 use WPPayForm\App\Models\Form;
 use WPPayForm\App\Models\Submission;
@@ -45,10 +46,10 @@ class AuthorizeDotNetProcessor
         add_action('wppayform_load_checkout_js_' . $this->method, array($this, 'addCheckoutJs'), 10, 3);
 
         // fetch all subscription entry wise
-        add_action('wppayform/subscription_settings_sync_square', array($this, 'makeSubscriptionSync'), 10, 2);
+        add_action('wppayform/subscription_settings_sync_authorizedotnet', array($this, 'makeSubscriptionSync'), 10, 2);
 
          // cancel subscription
-         add_action('wppayform/subscription_settings_cancel_square', array($this, 'cancelSubscription'), 10, 3);
+         add_action('wppayform/subscription_settings_cancel_authorizedotnet', array($this, 'cancelSubscription'), 10, 3);
 
          // ipns
          add_action('wppayform_handle_authorize_transaction_ipn', array($this, 'handleTransactionIpn'), 10, 1);
@@ -556,7 +557,7 @@ class AuthorizeDotNetProcessor
             return null;
         }
 
-        return $response['data']['subscription'];
+        return $response['data'];
     }
 
     public function makeSubscriptionSync($formId, $submissionId)
@@ -575,6 +576,29 @@ class AuthorizeDotNetProcessor
             return 'No subscription Id found!';
         };
 
+        $subscription = $subscriptions[0];
+        $vendorSubId = $subscription->vendor_subscriptipn_id;
+
+        if (!$vendorSubId) {
+            return 'No subscription Id found!';
+        }
+
+        $vendorSubscription = $this->getSubscriptionFromAuthorize($subscription);
+        $arbTransactions = $vendorSubscription['subscription']['arbTransactions'];
+        $amount = $vendorSubscription['subscription']['amount'];
+
+        if (!$arbTransactions) {
+            return 'No transaction found!';
+        }
+
+        // arbTransaction wiil have recent 20 transactions at most
+        foreach ($arbTransactions as $transaction) {
+            $transactionId = $transaction['transId'];
+            $paymentNo = $transaction['payNum'];
+            $this->maybeHandleSubscriptionPayment($transactionId, $paymentNo, $subscription, $submission);
+        }
+      
+
         SubmissionActivity::createActivity(array(
             'form_id' => $submission->form_id,
             'submission_id' => $submission->id,
@@ -590,6 +614,71 @@ class AuthorizeDotNetProcessor
 
     }
 
+    public function maybeHandleSubscriptionPayment($chargeId, $paymentNo, $subscription, $submission)
+    {
+        if ($subscription->bill_count >= $paymentNo) {
+            return;
+        }
+
+        // Maybe Insert The transaction Now
+        $subscriptionTransaction = new SubscriptionTransaction();
+        $totalAmount = $subscription->recurring_amount;
+        $paymentMode = $this->getPaymentMode();
+        $transactionId = $subscriptionTransaction->maybeInsertCharge([
+            'form_id' => $submission->form_id,
+            'user_id' => $submission->user_id,
+            'submission_id' => $submission->id,
+            'subscription_id' => $subscription->id,
+            'transaction_type' => 'subscription',
+            'payment_method' => 'authorizedotnet',
+            'charge_id' => $chargeId,
+            'payment_total' => $totalAmount,
+            'status' => 'paid',
+            'currency' => $submission->currency,
+            'payment_mode' => $paymentMode,
+            'payment_note' => sanitize_text_field('subscription payment synced from upstream'),
+            'created_at' => current_time('mysql'), // current_time('mysql'),
+            'updated_at' => current_time('mysql')
+        ]);
+
+        $transaction = $subscriptionTransaction->getTransaction($transactionId);
+        $subscriptionModel = new Subscription();
+        $isNewPayment = $paymentNo != $subscription->bill_count;
+      
+        // Check For Payment EOT
+        if ($subscription->bill_times && $paymentNo >= $subscription->bill_times) {
+            // we will update the subscription status to completed
+            $subscriptionModel->updateSubscription($subscription->id, [
+                'status' => 'completed',
+                'bill_count' => $paymentNo,
+            ]);
+
+            SubmissionActivity::createActivity(array(
+                'form_id' => $submission->form_id,
+                'submission_id' => $submission->id,
+                'type' => 'activity',
+                'created_by' => 'Paymattic BOT',
+                'content' => __('The Subscription Term Period has been completed', 'wp-payment-form-pro')
+            ));
+
+            $updatedSubscription = $subscriptionModel->getSubscription($subscription->id);
+            do_action('wppayform/subscription_payment_eot_completed', $submission, $updatedSubscription, $submission->form_id, []);
+            do_action('wppayform/subscription_payment_eot_completed_authorizedotnet', $submission, $updatedSubscription, $submission->form_id, []);
+
+        }
+
+        if ($isNewPayment) {
+            $subscriptionModel->updateSubscription($subscription->id, [
+                'status' => 'active',
+                'bill_count' => $paymentNo,
+            ]);
+            // New Payment Made so we have to fire some events here
+            do_action('wppayform/subscription_payment_received', $submission, $transaction, $submission->form_id, $subscription);
+            do_action('wppayform/subscription_payment_received_authorizedotnet', $submission, $transaction, $submission->form_id, $subscription);
+        }
+    }
+    
+
     public function cancelSubscription($formId, $submission, $subscription)
     {
         $subId = $subscription->vendor_subscriptipn_id;
@@ -599,15 +688,14 @@ class AuthorizeDotNetProcessor
         }
 
         $authArgs = $this->getAuthArgs($subscription->form_id);
-        $getSubscriptionReq = array(
+        $cancelSubscriptionReq = array(
             'ARBCancelSubscriptionRequest' => array(
                 'merchantAuthentication' => $authArgs['merchantAuthentication'],
                 'subscriptionId' => $subId,
-                "includeTransactions" => true
             )
         );
 
-        $response = (new API())->makeApiCall($getSubscriptionReq, $subscription->form_id, 'POST');
+        $response = (new API())->makeApiCall($cancelSubscriptionReq, $subscription->form_id, 'POST');
 
         if (isset($response['success']) && !$response['success']) {
             return null;
@@ -868,5 +956,210 @@ class AuthorizeDotNetProcessor
             'message' => __('Subscription with AuthorizeDotNet is not supported yet!', 'AuthorizeDotNet-payment-for-paymattic'),
             'payment_error' => true
         ), 423);
+    }
+
+    // ipn handling
+
+    public function handleTransactionIpn($data)
+    {
+        if (!$data) {
+            return;
+        }
+
+        $eventType = $data->eventType;
+        $payload = $data->payload;
+
+        $transactionId = $payload->id;
+
+        $transactionModel = new Transaction();
+        $transaction = $transactionModel->getTransactionByChargeId($transactionId);
+
+        if (!$transaction) {
+            return;
+        }
+
+        // net.authorize.payment.fraud.approved get fraud approved from this
+        $eventType = str_replace('net.authorize.payment.', '', $eventType);
+        $eventType = str_replace('.', '_', $eventType);
+
+        if (method_exists($this, $eventType)) {
+            $this->$eventType($transaction, $payload);
+        } else {
+            return;
+        }
+    }
+
+    public function handleSubscriptionIpn($data)
+    {
+        if (!$data) {
+            return;
+        }
+
+        $eventType = $data->eventType;
+        $payload = $data->payload;
+
+        $subscriptionId = $payload->id;
+
+        $subscriptionModel = new Subscription();
+        $subscription = $subscriptionModel->getSubscription($subscriptionId, 'vendor_subscriptipn_id');
+
+        if (!$subscription) {
+            return;
+        }
+
+        // net.authorize.payment.fraud.approved get fraud approved from this
+        $eventType = str_replace('net.authorize.customer.', '', $eventType);
+        $eventType = str_replace('.', '_', $eventType);
+
+        if (method_exists($this, $eventType)) {
+            $this->$eventType($subscription, $payload);
+        } else {
+            return;
+        }
+    }
+
+    public function fraud_approved($transaction, $payload)
+    {
+        $updateData = array(
+            'status' => 'paid',
+            'payment_note' => json_encode($payload)
+        );
+
+        $transactionModel = new Transaction();
+        $transactionModel->where('id', $transaction->id)->update($updateData);
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($transaction->submission_id);
+        $submissionData = array(
+            'payment_status' => 'paid',
+            'updated_at' => current_time('Y-m-d H:i:s')
+        );
+
+        $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $transaction->form_id,
+            'submission_id' => $transaction->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Transaction Marked as paid as held transaction get approved with Transaction ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $payload->id)
+        ));
+
+        do_action('wppayform/form_payment_success', $submission, $transaction, $transaction->form_id, $payload);
+        do_action('wppayform/form_payment_success_authorizedotnet', $submission, $transaction, $transaction->form_id, $payload);
+    }
+
+    public function fraud_declined($transaction, $payload)
+    {
+        $updateData = array(
+            'status' => 'failed',
+            'payment_note' => json_encode($payload)
+        );
+
+        $transactionModel = new Transaction();
+        $transactionModel->where('id', $transaction->id)->update($updateData);
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($transaction->submission_id);
+        $submissionData = array(
+            'payment_status' => 'failed',
+            'updated_at' => current_time('Y-m-d H:i:s')
+        );
+
+        $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $transaction->form_id,
+            'submission_id' => $transaction->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Transaction Marked as failed as held transaction get declined with Transaction ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $payload->id)
+        ));
+
+        do_action('wppayform/form_payment_failed', $submission, $transaction, $transaction->form_id, $payload);
+    }
+
+    public function void_created($transaction, $payload)
+    {
+        $updateData = array(
+            'status' => 'failed',
+            'payment_note' => json_encode($payload)
+        );
+
+        $transactionModel = new Transaction();
+        $transactionModel->where('id', $transaction->id)->update($updateData);
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($transaction->submission_id);
+        $submissionData = array(
+            'payment_status' => 'failed',
+            'updated_at' => current_time('Y-m-d H:i:s')
+        );
+
+        $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $transaction->form_id,
+            'submission_id' => $transaction->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Transaction Marked as failed as transaction is voided with Transaction ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $payload->id)
+        ));
+
+        do_action('wppayform/form_payment_failed', $submission, $transaction, $transaction->form_id, $payload);
+    }
+
+    public function refund_created($transaction, $payload) {
+        $updateData = array(
+            'status' => 'refunded',
+            'payment_note' => json_encode($payload)
+        );
+
+        $transactionModel = new Transaction();
+        $transactionModel->where('id', $transaction->id)->update($updateData);
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($transaction->submission_id);
+        $submissionData = array(
+            'payment_status' => 'refunded',
+            'updated_at' => current_time('Y-m-d H:i:s')
+        );
+
+        $submissionModel->where('id', $transaction->submission_id)->update($submissionData);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $transaction->form_id,
+            'submission_id' => $transaction->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Transaction Marked as refunded with Transaction ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $payload->id)
+        ));
+
+        do_action('wppayform/form_payment_refunded', $submission, $transaction, $transaction->form_id, $payload);
+    }
+
+    public function subscription_cancelled($subscription, $payload)
+    {
+        $updateData = array(
+            'status' => 'cancelled',
+            'vendor_response' => json_encode($payload)
+        );
+
+        $subscriptionModel = new Subscription();
+        $subscriptionModel->where('id', $subscription->id)->update($updateData);
+
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($subscription->submission_id);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $subscription->form_id,
+            'submission_id' => $subscription->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Subscription Cancelled with Subscription ID: %s', 'AuthorizeDotNet-payment-for-paymattic'), $payload->id)
+        ));
+
+        do_action('wppayform/subscription_payment_canceled', $submission, $subscription, $submission->form_id, $payload);
+        do_action('wppayform/subscription_payment_canceled_paypal', $submission, $subscription, $submission->form_id, $payload);
     }
 }
