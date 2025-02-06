@@ -425,7 +425,7 @@ class AuthorizeDotNetProcessor
             $trialAmount = number_format($subscription->initial_amount / 100, 2, '.', '');
         }
 
-        $trialOccurrences = $trailDays || $trialAmount ? 1 : 0;
+        $trialOccurrences = $trailDays ? 1 : 0;
 
         $subscriptionArgs = array(
             'name' => $subscription->item_name,
@@ -464,7 +464,12 @@ class AuthorizeDotNetProcessor
         $response = (new API())->makeApiCall($createSubscriptionReq, $form->ID, 'POST');
 
         if (isset($response['success']) && !$response['success']) {
-            wp_send_json_error(array('message' => $response['msg']), 423);
+            // if meg contains 'You have submitted a duplicate of Subscription' then update $response message to meaningful message
+            $msg = $response['msg'];
+            if (strpos($msg, 'You have submitted a duplicate of Subscription') !== false) {
+                $msg = 'You have already subscribed to this plan';
+            }
+            wp_send_json_error(array('message' => $msg), 423);
         }
 
         $data = $response['data'];
@@ -496,8 +501,25 @@ class AuthorizeDotNetProcessor
                 ->where('payment_method', 'authorizedotnet')
                 ->where('status', 'pending')
                 ->update(array(
+                    'subscription_id' => $subscription->id,
                     'status' => 'paid',
                     'payment_total' => $trialAmount * 100,
+                    'updated_at' => current_time('mysql')
+                ));
+            // update the submission status to partially paid
+            $submissionModel = new Submission();
+            $submissionModel->where('id', $submission->id)->update([
+                'payment_status' => 'partially-paid',
+                'payment_total' => $trialAmount * 100,
+                'updated_at' => current_time('mysql')
+            ]);
+        } else {
+            // just update the transaction with the subscription id
+            $transactionModel = new Transaction();
+            $transactionModel->where('submission_id', $submission->id)
+                ->where('payment_method', 'authorizedotnet')
+                ->update(array(
+                    'subscription_id' => $subscription->id,
                     'updated_at' => current_time('mysql')
                 ));
         }
@@ -551,7 +573,7 @@ class AuthorizeDotNetProcessor
             'ARBGetSubscriptionRequest' => array(
                 'merchantAuthentication' => $authArgs['merchantAuthentication'],
                 'subscriptionId' => $subId,
-                "includeTransactions" => true
+                'includeTransactions' => true
             )
         );
 
@@ -624,71 +646,99 @@ class AuthorizeDotNetProcessor
             return;
         }
 
-        // Maybe Insert The transaction Now
-        $subscriptionTransaction = new SubscriptionTransaction();
-        $totalAmount = $subscription->recurring_amount;
-        $paymentMode = $this->getPaymentMode();
-        $transactionId = $subscriptionTransaction->maybeInsertCharge([
-            'form_id' => $submission->form_id,
-            'user_id' => $submission->user_id,
-            'submission_id' => $submission->id,
-            'subscription_id' => $subscription->id,
-            'transaction_type' => 'subscription',
-            'payment_method' => 'authorizedotnet',
-            'charge_id' => $chargeId,
-            'payment_total' => $totalAmount,
-            'status' => 'paid',
-            'currency' => $submission->currency,
-            'payment_mode' => $paymentMode,
-            'payment_note' => sanitize_text_field('subscription payment synced from upstream'),
-            'created_at' => current_time('mysql'), // current_time('mysql'),
-            'updated_at' => current_time('mysql')
-        ]);
-
-        $transaction = $subscriptionTransaction->getTransaction($transactionId);
-        $subscriptionModel = new Subscription();
-        $isNewPayment = $paymentNo != $subscription->bill_count;
-
-        // if paymentNo is 1 make the submission status to paid
-        if ($paymentNo == 1) {
+         // if paymentNo is 1 make the submission status to paid
+         if ($paymentNo == 1) {
+           
             $submissionModel = new Submission();
-            $submissionModel->where('id', $submission->id)->update([
+           // update submission to paid if not already
+            $submissionModel->where('id', $submission->id)->where('payment_status', '!=', 'paid')->update([
                 'payment_status' => 'paid',
                 'updated_at' => current_time('mysql')
             ]);
-        }
-      
-        // Check For Payment EOT
-        if ($subscription->bill_times && $paymentNo >= $subscription->bill_times) {
-            // we will update the subscription status to completed
-            $subscriptionModel->updateSubscription($subscription->id, [
-                'status' => 'completed',
-                'bill_count' => $paymentNo,
-            ]);
 
-            SubmissionActivity::createActivity(array(
+            // get the first transaction related to the subscription_id, if charge id is present or equal to the current charge id then we will not update the transaction
+            $transactionModel = new Transaction();
+            $transaction = $transactionModel->where('submission_id', $submission->id)
+                ->where('payment_method', 'authorizedotnet')
+                ->where('subscription_id', $subscription->id)
+                ->where('charge_id', '!=', $chargeId)
+                ->first();
+         
+            if ($transaction) {
+                // update the transaction status to paid
+                $transaction->update([
+                    'status' => 'paid',
+                    'charge_id' => $chargeId,
+                    'payment_total' => $transaction->payment_total + ($amount * 100),
+                    'updated_at' => current_time('mysql')
+                ]);
+                    // update the bill count
+                $subscriptionModel = new Subscription();
+                $subscriptionModel->updateSubscription($subscription->id, [
+                    'status' => 'active',
+                    'bill_count' => 1,
+                    'updated_at' => current_time('mysql')
+                ]);
+
+                // update submission to paid if not already
+                $submissionModel->where('id', $submission->id)->where('payment_status', '!=', 'paid')->update([
+                    'payment_status' => 'paid',
+                    'updated_at' => current_time('mysql')
+                ]);
+
+                // New Payment Made so we have to fire some events here
+                // also trigger submission paid event
+                do_action('wppayform/payment_sucess', $submission, $transaction, $submission->form_id);
+                do_action('wppayform/payment_sucess_authorizedotnet', $submission, $transaction, $submission->form_id);
+                do_action('wppayform/subscription_payment_received', $submission, $transaction, $submission->form_id, $subscription);
+                do_action('wppayform/subscription_payment_received_authorizedotnet', $submission, $transaction, $submission->form_id, $subscription);
+            } // else already updated first transaction
+        } else {
+             // Maybe Insert The transaction Now
+            $subscriptionTransaction = new SubscriptionTransaction();
+            $paymentMode = $this->getPaymentMode();
+            $transactionId = $subscriptionTransaction->maybeInsertCharge([
                 'form_id' => $submission->form_id,
+                'user_id' => $submission->user_id,
                 'submission_id' => $submission->id,
-                'type' => 'activity',
-                'created_by' => 'Paymattic BOT',
-                'content' => __('The Subscription Term Period has been completed', 'wp-payment-form-pro')
-            ));
-
-            $updatedSubscription = $subscriptionModel->getSubscription($subscription->id);
-            do_action('wppayform/subscription_payment_eot_completed', $submission, $updatedSubscription, $submission->form_id, []);
-            do_action('wppayform/subscription_payment_eot_completed_authorizedotnet', $submission, $updatedSubscription, $submission->form_id, []);
-
-        }
-
-        if ($isNewPayment) {
-            $subscriptionModel->updateSubscription($subscription->id, [
-                'status' => 'active',
-                'bill_count' => $paymentNo,
+                'subscription_id' => $subscription->id,
+                'transaction_type' => 'subscription',
+                'payment_method' => 'authorizedotnet',
+                'charge_id' => $chargeId,
+                'payment_total' => $amount * 100,
+                'status' => 'paid',
+                'currency' => $submission->currency,
+                'payment_mode' => $paymentMode,
+                'payment_note' => sanitize_text_field('subscription payment synced from upstream'),
+                'created_at' => current_time('mysql'), // current_time('mysql'),
+                'updated_at' => current_time('mysql')
             ]);
-            // New Payment Made so we have to fire some events here
-            do_action('wppayform/subscription_payment_received', $submission, $transaction, $submission->form_id, $subscription);
-            do_action('wppayform/subscription_payment_received_authorizedotnet', $submission, $transaction, $submission->form_id, $subscription);
+
+            $transaction = $subscriptionTransaction->getTransaction($transactionId);
+            $subscriptionModel = new Subscription();
+        
+            // Check For Payment EOT
+            if ($subscription->bill_times && $paymentNo >= $subscription->bill_times) {
+                // we will update the subscription status to completed
+                $subscriptionModel->updateSubscription($subscription->id, [
+                    'status' => 'completed',
+                    'bill_count' => $paymentNo,
+                ]);
+
+                SubmissionActivity::createActivity(array(
+                    'form_id' => $submission->form_id,
+                    'submission_id' => $submission->id,
+                    'type' => 'activity',
+                    'created_by' => 'Paymattic BOT',
+                    'content' => __('The Subscription Term Period has been completed', 'wp-payment-form-pro')
+                ));
+
+                $updatedSubscription = $subscriptionModel->getSubscription($subscription->id);
+                do_action('wppayform/subscription_payment_eot_completed', $submission, $updatedSubscription, $submission->form_id, []);
+                do_action('wppayform/subscription_payment_eot_completed_authorizedotnet', $submission, $updatedSubscription, $submission->form_id, []);
+            }
         }
+
     }
     
 
@@ -1040,9 +1090,10 @@ class AuthorizeDotNetProcessor
     }
 
     // we will use this event only for subscription payment as normal payment is already handled
-    public function authcapture_created($data) 
+    public function authcapture_created($transaction, $payload) 
     {
-        $vendroSubscriptionData = $data->payload->subscription;
+        $vendroSubscriptionData = $payload->subscription;
+        
         if (!$vendroSubscriptionData) {
             return;
         }
@@ -1056,8 +1107,8 @@ class AuthorizeDotNetProcessor
             return;
         }
 
-        $vtransId = $data->payload->id;
-        $amount = $data->payload->authAmount;
+        $vtransId = $payload->id;
+        $amount = $payload->authAmount;
         $paymentNum = $subscription->bill_count + 1;
 
         // submission
