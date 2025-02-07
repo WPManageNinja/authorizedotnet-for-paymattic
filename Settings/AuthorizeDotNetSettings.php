@@ -80,17 +80,26 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
 
         $response = wp_remote_get($githubApi);
 
+        if (is_wp_error($response)) {
+            return $result;
+        }
+
         $responseCode = wp_remote_retrieve_response_code($response);
         if ($responseCode >= 400) {
             return $result;
         }
-
-        if (isset($releases->documentation_url) || is_wp_error($response)) {
+        
+        $body = wp_remote_retrieve_body($response);
+        if (empty($body)) {
             return $result;
         }
-
-        $releases = json_decode($response['body']);
-        if (!is_array($releases) || empty($releases)) {
+        
+        $releases = json_decode($body);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return $result;
+        }
+        
+        if (isset($releases->documentation_url)) {
             return $result;
         }
 
