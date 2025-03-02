@@ -602,23 +602,33 @@ class AuthorizeDotNetProcessor
         $subscriptions = $subscriptionModel->getSubscriptions($submissionId);
 
         if (!isset($subscriptions[0])) {
-            return 'No subscription Id found!';
+           wp_send_json_error(array(
+                'message' => 'No subscription found!',
+                'type' => 'error'
+            ), 423);
         };
 
         $subscription = $subscriptions[0];
         $vendorSubId = $subscription->vendor_subscriptipn_id;
 
         if (!$vendorSubId) {
-            return 'No subscription Id found!';
+            wp_send_json_error(array(
+                'message' => 'No subscription found!',
+                'type' => 'error'
+            ), 423);
         }
 
         $vendorSubscription = $this->getSubscriptionFromAuthorize($subscription);
+
+        if (!isset($vendorSubscription['subscription']['arbTransactions'])) {
+            wp_send_json_error(array(
+                'message' => 'No transactions found!',
+                'type' => 'error'
+            ), 423);
+        }
+
         $arbTransactions = $vendorSubscription['subscription']['arbTransactions'];
         $amount = $vendorSubscription['subscription']['amount'];
-
-        if (!$arbTransactions) {
-            return 'No transaction found!';
-        }
 
         // arbTransaction wiil have recent 20 transactions at most
         foreach ($arbTransactions as $transaction) {
