@@ -392,7 +392,7 @@ class AuthorizeDotNetProcessor
 
         if ('month' == $subscription->billing_interval) {
             $interval = 'months';
-        } else if ('day' == $subscription->billing_interval) {
+        } else if ('daily' == $subscription->billing_interval ) {
             $interval = 'days';
         } else {
             wp_send_json_error(array(
@@ -408,11 +408,11 @@ class AuthorizeDotNetProcessor
 
         
 
-        // make sure startDate is greater than current date , if no trial days add 5 minutes
+        // make sure startDate is greater than current date , if no trial days add 1 minute
         if ($trailDays) {
             $startDate = date('Y-m-d', strtotime('+' . $trailDays . ' days', strtotime(current_time('mysql'))));
         } else {
-            $startDate = date('Y-m-d', strtotime('+5 minutes', strtotime(current_time('mysql'))));
+            $startDate = date('Y-m-d', strtotime('+1 minutes', strtotime(current_time('mysql'))));
         }
 
         
@@ -510,7 +510,6 @@ class AuthorizeDotNetProcessor
             $submissionModel = new Submission();
             $submissionModel->where('id', $submission->id)->update([
                 'payment_status' => 'partially-paid',
-                'payment_total' => $trialAmount * 100,
                 'updated_at' => current_time('mysql')
             ]);
         } else {
@@ -520,6 +519,8 @@ class AuthorizeDotNetProcessor
                 ->where('payment_method', 'authorizedotnet')
                 ->update(array(
                     'subscription_id' => $subscription->id,
+                    'payment_total' => $subscription->recurring_amount,
+                    'transaction_type' => 'subscription',
                     'updated_at' => current_time('mysql')
                 ));
         }
@@ -669,7 +670,7 @@ class AuthorizeDotNetProcessor
                 $transaction->update([
                     'status' => 'paid',
                     'charge_id' => $chargeId,
-                    'payment_total' => $transaction->payment_total + ($amount * 100),
+                    'payment_total' => $amount * 100,
                     'updated_at' => current_time('mysql')
                 ]);
                     // update the bill count
@@ -1085,7 +1086,7 @@ class AuthorizeDotNetProcessor
         if (method_exists($this, $eventType)) {
             $this->$eventType($subscription, $payload);
         } else {
-            return;
+            exit(404);
         }
     }
 
@@ -1260,6 +1261,58 @@ class AuthorizeDotNetProcessor
         ));
 
         do_action('wppayform/subscription_payment_canceled', $submission, $subscription, $submission->form_id, $payload);
-        do_action('wppayform/subscription_payment_canceled_paypal', $submission, $subscription, $submission->form_id, $payload);
+        do_action('wppayform/subscription_payment_canceled_authorizedotnet', $submission, $subscription, $submission->form_id, $payload);
     }
+
+    public function subscription_expired($subscription, $payload)
+    {
+        $updateData = array(
+            'status' => 'expired',
+            'vendor_response' => json_encode($payload)
+        );
+
+        $subscriptionModel = new Subscription();
+        $subscriptionModel->where('id', $subscription->id)->update($updateData);
+
+        // trigger subscription expired event
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($subscription->submission_id);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $subscription->form_id,
+            'submission_id' => $subscription->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Subscription Expired with Subscription ID: %s', 'authorizedotnet-for-paymattic'), $payload->id)
+        ));
+
+        do_action('wppayform/subscription_payment_expired', $submission, $subscription, $submission->form_id, $payload);
+        do_action('wppayform/subscription_payment_expired_authorizedotnet', $submission, $subscription, $submission->form_id, $payload);
+    }
+
+    public function subscription_expiring($subscription, $payload)
+    {
+        $updateData = array(
+            'status' => 'expiring',
+            'vendor_response' => json_encode($payload)
+        );
+
+        $subscriptionModel = new Subscription();
+        $subscriptionModel->where('id', $subscription->id)->update($updateData);
+
+        // trigger subscription expiring event
+        $submissionModel = new Submission();
+        $submission = $submissionModel->getSubmission($subscription->submission_id);
+
+        SubmissionActivity::createActivity(array(
+            'form_id' => $subscription->form_id,
+            'submission_id' => $subscription->submission_id,
+            'type' => 'info',
+            'created_by' => 'PayForm Bot',
+            'content' => sprintf(__('Subscription Expiring with Subscription ID: %s', 'authorizedotnet-for-paymattic'), $payload->id)
+        ));
+
+        do_action('wppayform/subscription_payment_expiring', $submission, $subscription, $submission->form_id, $payload);
+        do_action('wppayform/subscription_payment_expiring_authorizedotnet', $submission, $subscription, $submission->form_id, $payload);
+    }   
 }
