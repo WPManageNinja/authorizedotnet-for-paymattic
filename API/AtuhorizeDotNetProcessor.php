@@ -34,7 +34,6 @@ class AuthorizeDotNetProcessor
     {
         new  \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetElement();
         (new  \AuthorizeDotNetForPaymattic\Settings\AuthorizeDotNetSettings())->init();
-        (new \AuthorizeDotNetForPaymattic\API\IPN())->init();
         (new \AuthorizeDotNetForPaymattic\API\API()); 
 
         add_filter('wppayform/choose_payment_method_for_submission', array($this, 'choosePaymentMethod'), 10, 4);
@@ -54,6 +53,9 @@ class AuthorizeDotNetProcessor
          // ipns
          add_action('wppayform_handle_authorize_transaction_ipn', array($this, 'handleTransactionIpn'), 10, 1);
          add_action('wppayform_handle_authorize_subscription_ipn', array($this, 'handleSubscriptionIpn'), 10, 1);
+
+         // ipn
+         (new \AuthorizeDotNetForPaymattic\API\IPN())->init();
 
     }
 
