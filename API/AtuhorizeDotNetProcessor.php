@@ -739,7 +739,7 @@ class AuthorizeDotNetProcessor
                 $updatedSubscription = $subscriptionModel->getSubscription($subscription->id);
                 do_action('wppayform/subscription_payment_eot_completed', $submission, $updatedSubscription, $submission->form_id, []);
                 do_action('wppayform/subscription_payment_eot_completed_authorizedotnet', $submission, $updatedSubscription, $submission->form_id, []);
-            }
+            } 
         }
 
     }
@@ -1095,13 +1095,38 @@ class AuthorizeDotNetProcessor
     // we will use this event only for subscription payment as normal payment is already handled
     public function authcapture_created($transaction, $payload) 
     {
-        $vendroSubscriptionData = $payload->subscription;
-        
+        $transactionId = $payload->id;
+        // get the details of the transaction from authorize.net
+        $authArgs = $this->getAuthArgs($transaction->form_id);
+        $getTransactionReq = array(
+            'getTransactionDetailsRequest' => array(
+                'merchantAuthentication' => $authArgs['merchantAuthentication'],
+                'transId' => $transactionId
+            )
+        );
+
+        $response = (new API())->makeApiCall($getTransactionReq, $transaction->form_id, 'POST');
+
+        if (isset($response['success']) && !$response['success']) {
+            return;
+        }
+
+        $data = $response['data'];
+        $transactionDetails = $data['getTransactionDetailsResponse'];
+
+        // only handling subscription payment, one time payment is already handled
+       if (!isset($transactionDetails['subscription'])) {
+           return;
+       }
+
+       $vendroSubscriptionData = Arr::get($transactionDetails, 'subscription'); //$transactionDetails['subscription'];
+      
         if (!$vendroSubscriptionData) {
             return;
         }
 
-        $vsubId = $vendroSubscriptionData->id;
+        $vsubId = Arr::get($vendroSubscriptionData, 'id');
+        $payNum = Arr::get($vendroSubscriptionData, 'payNum');
 
         $subscriptionModel = new Subscription();
         $subscription = $subscriptionModel->getSubscription($vsubId, 'vendor_subscriptipn_id');
@@ -1112,13 +1137,15 @@ class AuthorizeDotNetProcessor
 
         $vtransId = $payload->id;
         $amount = $payload->authAmount;
-        $paymentNum = $subscription->bill_count + 1;
+        $paymentNum = $payNum;
 
         // submission
         $submissionModel = new Submission();
         $submission = $submissionModel->getSubmission($subscription->submission_id);
 
         $this->maybeHandleSubscriptionPayment($amount, $vtransId, $paymentNum, $subscription, $submission);
+
+        exit(200);
     }
 
     public function fraud_approved($transaction, $payload)
