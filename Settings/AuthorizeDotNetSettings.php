@@ -20,7 +20,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
     {
         parent::__construct(
             'authorizedotnet',
-            'AuthorizeDotNet',
+            'authorize.net',
             [],
             AuthorizeDotNet_FOR_PAYMATTIC_URL . 'assets/authorizedotnet.svg' // follow naming convention of logo with lowercase exactly as payment key to avoid logo rendering hassle
         );
@@ -62,7 +62,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
             'live_transaction_key' => '',
             'sandbox_client_key' => '',
             'live_client_key' => '',
-            'button_text' => __('Pay with authorizedotnet', 'authorizedotnet-payment-for-paymattic'),
+            'button_text' => __('Pay with authorizedotnet', 'authorizedotnet-for-paymattic'),
             'sandbox_signature_key' => '',
             'live_signature_key' => '',
             'update_available' => $updateAvailable
@@ -75,7 +75,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         $result = array(
             'available' => 'no',
             'url' => '',
-            'slug' => 'authorizedotnet-payment-for-paymattic'
+            'slug' => 'authorizedotnet-for-paymattic'
         );
 
         $response = wp_remote_get($githubApi);
@@ -161,10 +161,10 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         return array(
             'payment_mode' => array(
                 'value' => 'test',
-                'label' => __('Payment Mode', 'authorizedotnet-payment-for-paymattic'),
+                'label' => __('Payment Mode', 'authorizedotnet-for-paymattic'),
                 'options' => array(
-                    'test' => __('Test Mode', 'authorizedotnet-payment-for-paymattic'),
-                    'live' => __('Live Mode', 'authorizedotnet-payment-for-paymattic')
+                    'test' => __('Test Mode', 'authorizedotnet-for-paymattic'),
+                    'live' => __('Live Mode', 'authorizedotnet-for-paymattic')
                 ),
                 'type' => 'payment_mode'
             ),
@@ -205,10 +205,10 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'placeholder' => __('Live Client Key', 'authorizedotnet-for-paymattic')
             ),
             'button_text' => array(
-                'value' => __('Pay with authorizedotnet', 'authorizedotnet-payment-for-paymattic'),
-                'label' => __('Button Text', 'authorizedotnet-payment-for-paymattic'),
+                'value' => __('Pay with authorizedotnet', 'authorizedotnet-for-paymattic'),
+                'label' => __('Button Text', 'authorizedotnet-for-paymattic'),
                 'type' => 'text',
-                'placeholder' => __('Authorizedotnet Button Text', 'authorizedotnet-payment-for-paymattic')
+                'placeholder' => __('Authorizedotnet Button Text', 'authorizedotnet-for-paymattic')
             ),
             'sandbox_signature_key' => array(
                 'value' => '',
@@ -225,25 +225,25 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
             'desc' => array(
                 'value' => '<p>See our <a href="#" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup.</p>',
                 'type' => 'html_attr',
-                'placeholder' => __('Description', 'authorizedotnet-payment-for-paymattic')
+                'placeholder' => __('Description', 'authorizedotnet-for-paymattic')
             ),
-            // 'webhook_desc' => array(
-            //     'value' => "<h3><span style='color: #ef680e; margin-right: 2px'>*</span>Requred authorizedotnet Webhook Setup </h3> <p>In order for authorizedotnet to function completely for payments, you must configure your authorizedotnet webhooks. Visit your <a href='https://dashboard.authorizedotnet.co/settings/developers#callbacks' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add a webhook endpoint for the URL below. </p> <p><b>Webhook URL: </b><code> " . site_url('?wpf_authorizedotnet_listener=1') . "</code></p> <p>See <a href='https://paymattic.com/docs/how-to-integrate-authorizedotnet-in-wordpress#webhook' target='_blank' rel='noopener'>our documentation</a> for more information.</p> <div> <p><b>Please subscribe to these following Webhook events for this URL:</b></p> <ul> <li><code>Invoices paid</code></li></ul> </div>",
-            //     'label' => __('Webhook URL', 'authorizedotnet-payment-for-paymattic'),
-            //     'type' => 'html_attr',
-            // ),
+            'webhook_desc' => array(
+                'value' => "<h3><span style='color: #ef680e; margin-right: 2px'>*</span>Requred authorizedotnet Webhook Setup </h3> <p>In order for authorizedotnet to function completely for payments, you must configure your authorizedotnet webhooks. Visit your <a href='https://dashboard.authorizedotnet.co/settings/developers#callbacks' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add a webhook endpoint for the URL below. </p> <p><b>Webhook URL: </b><code> " . site_url('?wpf_authorizedotnet_listener=1') . "</code></p> <p>See <a href='https://paymattic.com/docs/how-to-integrate-authorizedotnet-in-wordpress#webhook' target='_blank' rel='noopener'>our documentation</a> for more information.</p> <div> <p><b>Please subscribe to these following Webhook events for this URL:</b></p> <ul> <li><code>Invoices paid</code></li></ul> </div>",
+                'label' => __('Webhook URL', 'authorizedotnet-for-paymattic'),
+                'type' => 'html_attr',
+            ),
             'is_pro_item' => array(
                 'value' => 'yes',
-                'label' => __('authorizedotnet', 'authorizedotnet-payment-for-paymattic'),
+                'label' => __('authorizedotnet', 'authorizedotnet-for-paymattic'),
             ),
             'update_available' => array(
                 'value' => array(
                     'available' => 'no',
                     'url' => '',
-                    'slug' => 'authorizedotnet-payment-for-paymattic'
+                    'slug' => 'authorizedotnet-for-paymattic'
                 ),
                 'type' => 'update_check',
-                'label' => __('Update to new version avaiable', 'authorizedotnet-payment-for-paymattic'),
+                'label' => __('Update to new version avaiable', 'authorizedotnet-for-paymattic'),
             )
         );
     }
@@ -255,13 +255,13 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
  
         if ($mode == 'test') {
             if (empty(Arr::get($settings, 'sandbox_api_login_id')) || empty(Arr::get($settings, 'sandbox_transaction_key'))) {
-                $errors['test_key'] = __('Credential missing!', 'authorizedotnet-payment-for-paymattic');
+                $errors['test_key'] = __('Credential missing!', 'authorizedotnet-for-paymattic');
             }
         }
 
         if ($mode == 'live') {
             if (empty(Arr::get($settings, 'live_api_login_id')) || empty(Arr::get($settings, 'live_transaction_key'))) {
-                $errors['live_key'] = __('Credential missing!', 'authorizedotnet-payment-for-paymattic');
+                $errors['live_key'] = __('Credential missing!', 'authorizedotnet-for-paymattic');
             }
         }
 
