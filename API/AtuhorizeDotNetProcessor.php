@@ -6,6 +6,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly.
 }
 
+use EDD\Database\Queries\Order;
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Transaction;
 use WPPayForm\App\Models\SubscriptionTransaction;
@@ -284,7 +285,6 @@ class AuthorizeDotNetProcessor
                 'status' => 'paid'
             );
 
-            // dd('updating data on paid', $updateData, $response);
             $this->markAsPaid('paid', $updateData, $transaction);
 
         } else if (4 == intval($responseCode)) {
@@ -366,6 +366,18 @@ class AuthorizeDotNetProcessor
                 'dataValue' => $dataValue
             )
         );
+
+        // currently we are not allowing discount on subscription with authorize dot net
+        $orderItemsModel = new OrderItem();
+        $discountItems = $orderItemsModel->getDiscountItems($submission->id);
+        if (count($discountItems)) {
+            dd($discountItems);
+            wp_send_json_error(array(
+                'message' => 'Right now we do not support discount/coupon on subscription with authorize dot net',
+                'call_next_method' => 'normalRedirect',
+                'redirect_url' => $this->getSuccessURL($form, $submission)
+            ), 423);
+        }
 
          // billing address
          $firstName = '';
