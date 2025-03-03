@@ -371,7 +371,6 @@ class AuthorizeDotNetProcessor
         $orderItemsModel = new OrderItem();
         $discountItems = $orderItemsModel->getDiscountItems($submission->id);
         if (count($discountItems)) {
-            dd($discountItems);
             wp_send_json_error(array(
                 'message' => 'Right now we do not support discount/coupon on subscription with authorize dot net',
                 'call_next_method' => 'normalRedirect',
