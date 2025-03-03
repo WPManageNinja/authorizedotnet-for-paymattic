@@ -6,7 +6,6 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly.
 }
 
-use EDD\Database\Queries\Order;
 use WPPayForm\Framework\Support\Arr;
 use WPPayForm\App\Models\Transaction;
 use WPPayForm\App\Models\SubscriptionTransaction;
