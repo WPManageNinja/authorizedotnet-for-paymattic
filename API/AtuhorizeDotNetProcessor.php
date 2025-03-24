@@ -248,13 +248,13 @@ class AuthorizeDotNetProcessor
         }
 
         $createTransactionRequest['createTransactionRequest']['transactionRequest']['shipTo'] = array(
-            'firstName' => $firstName,
-            'lastName' => $lastName,
-            'address' => $address,
-            'city' => $city,
-            'state' => $state,
-            'zip' => $zip,
-            'country' => $country
+            'firstName' => $firstName ? $firstName : 'Name Not Provided',
+            'lastName' => $lastName ? $lastName : 'Name Not Provided',
+            'address' => $address ? $address : 'Address Not Provided',
+            'city' => $city ? $city : 'City Not Provided',
+            'state' => $state ? $state : 'State Not Provided',
+            'zip' => $zip ? $zip : 'Zip Not Provided',
+            'country' => $country ? $country : 'Country Not Provided'
         );
 
        $createTransactionRequest['createTransactionRequest']['transactionRequest']['customerIP'] = $_SERVER['REMOTE_ADDR'];
@@ -355,7 +355,6 @@ class AuthorizeDotNetProcessor
 
     public function handleSubscription($submission, $form, $formData, $lineItems, $authArgs, $dataValue, $dataDescriptor)
     {
-
         $subscription = $this->getValidSubscription($submission);
 
         $authArgs = $this->getAuthArgs($form->ID);
@@ -454,13 +453,12 @@ class AuthorizeDotNetProcessor
             'trialAmount' => $trialAmount,
             'payment' => $payment,
             'billTo' => array(
-                'firstName' => $firstName,
-                'lastName' => $lastName,
-                'address' => $address,
-                'city' => $city,
-                'state' => $state,
-                'zip' => $zip,
-                'country' => $country,
+                'firstName' => $firstName ? $firstName : 'Name Not Provided',
+                'lastName' => $lastName ? $lastName : 'Name Not Provided',
+                'address' => $address ? $address : 'Address Not Provided',
+                'city' => $city ? $city : 'City Not Provided',
+                'state' => $state ? $state : 'State Not Provided',
+                'zip' => $zip ? $zip : 'Zip Not Provided',
             ),
         );
 
@@ -471,7 +469,6 @@ class AuthorizeDotNetProcessor
                 'subscription' => $subscriptionArgs,
             )
         );
-
         // do the api call
         $response = (new API())->makeApiCall($createSubscriptionReq, $form->ID, 'POST');
 

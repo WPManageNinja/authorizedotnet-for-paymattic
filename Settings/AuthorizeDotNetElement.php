@@ -28,7 +28,7 @@ class AuthorizeDotNetElement extends BaseComponent
     public function pushPaymentMethod($methods)
     {
         $methods['authorizedotnet'] = array(
-            'label' => 'authorizedotnet',
+            'label' => 'Authorize.net',
             'isActive' => true,
             'logo' => AuthorizeDotNet_FOR_PAYMATTIC_URL . 'assets/authorizedotnet.svg',
             'editor_elements' => array(
