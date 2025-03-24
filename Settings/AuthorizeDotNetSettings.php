@@ -223,12 +223,12 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'placeholder' => __('Live Signature Key', 'authorizedotnet-for-paymattic')
             ),
             'desc' => array(
-                'value' => '<p>See our <a href="#" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup.</p>',
+                'value' => '<p>See our <a href="https://paymattic.com/docs/configure-authorize-net-in-wordpress-through-paymattic/" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup with paymattic.</p>',
                 'type' => 'html_attr',
                 'placeholder' => __('Description', 'authorizedotnet-for-paymattic')
             ),
             'webhook_desc' => array(
-                'value' => "<h3><span style='color: #ef680e; margin-right: 2px'>*</span>Requred authorizedotnet Webhook Setup </h3> <p>In order for authorizedotnet to function completely for payments, you must configure your authorizedotnet webhooks. Visit your <a href='https://dashboard.authorizedotnet.co/settings/developers#callbacks' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add a webhook endpoint for the URL below. </p> <p><b>Webhook URL: </b><code> " . site_url() . "</code></p> <p>See <a href='https://paymattic.com/docs/how-to-integrate-authorizedotnet-in-wordpress#webhook' target='_blank' rel='noopener'>our documentation</a> for more information.</p> <div> <p><b>Please subscribe to these following Webhook events for this URL:</b></p> <ul><li><code>net.authorize.payment.authcapture.created</code></li> <li><code>net.authorize.payment.fraud.approved</code></li><li><code>net.authorize.payment.fraud.declined</code></li><li><code>net.authorize.payment.void.created</code></li><li><code>net.authorize.payment.refund.created</code></li><li><code>net.authorize.customer.subscription.cancelled</code></li><li><code>net.authorize.customer.subscription.expired</code></li><li><code>net.authorize.customer.subscription.expiring</code></li></ul> </div>",
+                'value' => self::getWebhookDescription(),
                 'label' => __('Webhook URL', 'authorizedotnet-for-paymattic'),
                 'type' => 'html_attr',
             ),
@@ -246,6 +246,39 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'label' => __('Update to new version avaiable', 'authorizedotnet-for-paymattic'),
             )
         );
+    }
+
+    // Add this method to the class
+    private static function getWebhookDescription()
+    {
+        $webhookUrl = site_url();
+        $documentationUrl = 'https://paymattic.com/docs/how-to-integrate-authorizedotnet-in-wordpress#webhook';
+        $dashboardUrl = 'https://www.authorize.net/';
+        $webhookEvents = [
+            'net.authorize.payment.authcapture.created',
+            'net.authorize.payment.fraud.approved',
+            'net.authorize.payment.fraud.declined',
+            'net.authorize.payment.void.created',
+            'net.authorize.payment.refund.created',
+            'net.authorize.customer.subscription.cancelled',
+            'net.authorize.customer.subscription.expired',
+            'net.authorize.customer.subscription.expiring'
+        ];
+
+        $eventsList = '';
+        foreach ($webhookEvents as $event) {
+            $eventsList .= "<li><code>{$event}</code></li>";
+        }
+
+        return "
+            <h3><span style='color: #ef680e; margin-right: 2px'>*</span>Required authorizedotnet Webhook Setup</h3>
+            <p>In order for authorizedotnet to function completely for payments, you must configure your authorizedotnet webhooks. Visit your <a href='{$dashboardUrl}' target='_blank' rel='noopener'>account dashboard</a> to configure them. Please add below url as the webhook endpoint.</p>
+            <p><b>Webhook URL: </b><br/><br/><code>{$webhookUrl}</code></p>
+            <div>
+                <p><b>Please subscribe to these following Webhook events for this URL:</b></p>
+                <ul>{$eventsList}</ul>
+            </div>
+        ";
     }
 
     public function validateSettings($errors, $settings)
@@ -286,10 +319,10 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         $settings = $this->getSettings();
 
         if ($isLive) {
-            return $settings['live_api_login_id'];
+            return trim($settings['live_api_login_id']);
         }
 
-        return $settings['sandbox_api_login_id'];
+        return trim($settings['sandbox_api_login_id']);
     }
 
     
@@ -300,10 +333,10 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         $settings = $this->getSettings();
 
         if ($isLive) {
-            return $settings['live_client_key'];
+            return trim($settings['live_client_key']);
         }
 
-        return $settings['sandbox_client_key'];
+        return trim($settings['sandbox_client_key']);
     }
 
     public function getTransactionKey($formId = false)
@@ -312,10 +345,10 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         $settings = $this->getSettings();
 
         if ($isLive) {
-            return $settings['live_transaction_key'];
+            return trim($settings['live_transaction_key']);
         }
 
-        return $settings['sandbox_transaction_key'];
+        return trim($settings['sandbox_transaction_key']);
     }
 
     public function getSignatureKey($formId = false)
@@ -324,10 +357,10 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         $settings = $this->getSettings();
 
         if ($isLive) {
-            return $settings['live_signature_key'];
+            return trim($settings['live_signature_key']);
         }
 
-        return $settings['sandbox_signature_key'];
+        return trim($settings['sandbox_signature_key']);
     }
     
 }
