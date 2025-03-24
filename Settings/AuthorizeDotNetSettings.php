@@ -20,7 +20,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
     {
         parent::__construct(
             'authorizedotnet',
-            'authorize.net',
+            'Authorize.Net',
             [],
             AuthorizeDotNet_FOR_PAYMATTIC_URL . 'assets/authorizedotnet.svg' // follow naming convention of logo with lowercase exactly as payment key to avoid logo rendering hassle
         );
@@ -208,7 +208,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'value' => __('Pay with authorizedotnet', 'authorizedotnet-for-paymattic'),
                 'label' => __('Button Text', 'authorizedotnet-for-paymattic'),
                 'type' => 'text',
-                'placeholder' => __('Authorizedotnet Button Text', 'authorizedotnet-for-paymattic')
+                'placeholder' => __('Authorize.Net Button Text', 'authorizedotnet-for-paymattic')
             ),
             'sandbox_signature_key' => array(
                 'value' => '',

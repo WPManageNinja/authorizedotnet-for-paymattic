@@ -983,7 +983,7 @@ class AuthorizeDotNetProcessor
             'form_id' => $submission->form_id,
             'submission_id' => $submission->id,
             'type' => 'info',
-            'created_by' => 'Authorizedotnet',
+            'created_by' => 'Authorize.Net',
             'content' => $activityContent
         ));
     }

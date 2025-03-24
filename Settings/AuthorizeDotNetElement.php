@@ -47,7 +47,7 @@ class AuthorizeDotNetElement extends BaseComponent
     {
         return array(
             'type' => 'authorizedotnet_gateway_element',
-            'editor_title' => 'AuthorizeDotNet Payment',
+            'editor_title' => 'Authorize.Net Payment',
             'editor_icon' => '',
             'conditional_hide' => true,
             'group' => 'payment_method_element',
