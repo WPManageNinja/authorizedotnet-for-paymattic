@@ -9,7 +9,7 @@
  * Plugin Name: AtuhorizeDotNet For Paymattic
  * Plugin URI: https://paymattic.com/
  * Description: AtuhorizeDotNet payment gateway for paymattic. AtuhorizeDotNet is the one of leading payment gateway in United States, Canada, Australia and United Kingdom and Europe.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: WPManageNinja LLC
  * Author URI: https://paymattic.com/
  * License: GPLv2 or later
@@ -26,7 +26,7 @@ defined('ABSPATH') or die;
 define('AuthorizeDotNet_FOR_PAYMATTIC', true);
 define('AuthorizeDotNet_FOR_PAYMATTIC_DIR', __DIR__);
 define('AuthorizeDotNet_FOR_PAYMATTIC_URL', plugin_dir_url(__FILE__));
-define('AuthorizeDotNet_FOR_PAYMATTIC_VERSION', '1.0.0');
+define('AuthorizeDotNet_FOR_PAYMATTIC_VERSION', '1.0.1');
 
 
 if (!class_exists('AtuhorizeDotNetForPaymattic')) {
