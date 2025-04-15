@@ -19,7 +19,7 @@ class API {
     private static $liveEndPoint = 'https://api.authorize.net/xml/v1/request.api';
 
     public static function getEndPoint(){
-        return AuthorizeDotNetSettings::getPaymentMode() == 'test' ? self::$sandboxEndPoint : self::$liveEndPoint;
+        return AuthorizeDotNetSettings::getPaymentMode() == 'live' ? self::$liveEndPoint : self::$sandboxEndPoint;
     }
 
     public static function getHeaders(){
