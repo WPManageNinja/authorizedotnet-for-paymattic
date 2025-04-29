@@ -170,36 +170,42 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
             ),
             'sandbox_api_login_id' => array(
                 'value' => '',
+                'required' => true,
                 'label' => __('Sandbox API Login Id', 'authorizedotnet-for-paymattic'),
                 'type' => 'test_pub_key',
                 'placeholder' => __('Sandbox Login Id', 'authorizedotnet-for-paymattic')
             ),
             'sandbox_transaction_key' => array(
                 'value' => '',
+                'required' => true,
                 'label' => __('Sanbox Transaction Key', 'authorizedotnet-for-paymattic'),
                 'type' => 'test_secret_key',
                 'placeholder' => __('Sandbox Transaction Key', 'authorizedotnet-for-paymattic')
             ),
             'sandbox_client_key' => array(
                 'value' => '',
+                'required' => true,
                 'label' => __('Sandbox Client Key', 'authorizedotnet-for-paymattic'),
                 'type' => 'test_pub_key',
                 'placeholder' => __('Sandbox Client Key', 'authorizedotnet-for-paymattic')
             ),
             'live_api_login_id' => array(
                 'value' => '',
+                'required' => true,
                 'label' => __('Live API Login ID', 'authorizedotnet-for-paymattic'),
                 'type' => 'live_pub_key',
                 'placeholder' => __('Live API Login ID', 'authorizedotnet-for-paymattic')
             ),
             'live_transaction_key' => array(
                 'value' => '',
+                'required' => true,
                 'label' => __('Live Transaction Key', 'authorizedotnet-for-paymattic'),
                 'type' => 'live_secret_key',
                 'placeholder' => __('Live Transaction Key', 'authorizedotnet-for-paymattic')
             ),
             'live_client_key' => array(
                 'value' => '',
+                'required' => true,
                 'label' => __('Live Client Key', 'authorizedotnet-for-paymattic'),
                 'type' => 'live_pub_key',
                 'placeholder' => __('Live Client Key', 'authorizedotnet-for-paymattic')
@@ -287,13 +293,13 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         $mode = Arr::get($settings, 'payment_mode');
  
         if ($mode == 'test') {
-            if (empty(Arr::get($settings, 'sandbox_api_login_id')) || empty(Arr::get($settings, 'sandbox_transaction_key'))) {
+            if (empty(Arr::get($settings, 'sandbox_api_login_id')) || empty(Arr::get($settings, 'sandbox_transaction_key')) || empty(Arr::get($settings, 'sandbox_client_key'))) {
                 $errors['test_key'] = __('Credential missing!', 'authorizedotnet-for-paymattic');
             }
         }
 
         if ($mode == 'live') {
-            if (empty(Arr::get($settings, 'live_api_login_id')) || empty(Arr::get($settings, 'live_transaction_key'))) {
+            if (empty(Arr::get($settings, 'live_api_login_id')) || empty(Arr::get($settings, 'live_transaction_key')) || empty(Arr::get($settings, 'live_client_key'))) {
                 $errors['live_key'] = __('Credential missing!', 'authorizedotnet-for-paymattic');
             }
         }
