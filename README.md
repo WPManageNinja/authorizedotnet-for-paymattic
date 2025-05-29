@@ -1,9 +1,9 @@
-=== Authorize.net Payment for Paymattic ===
-Contributors: hasanuzzamanshamim, wpmanageninja, akmelias, dasnitesh780
-Tags: payment form, donations, payments, Recurring payment, Authorize.Net payments
+=== Authorize.Net Payment for Paymattic ===
+Contributors: wpmanageninja, akmelias
+Tags: payment form, donations, payments, Recurring Payments, Authorize.Net
 Requires at least: 4.5
 Tested up to: 6.7
-Stable tag: 1.0.1
+Stable tag: 1.0.3
 Requires PHP: 7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
