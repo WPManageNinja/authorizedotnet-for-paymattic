@@ -37,7 +37,7 @@ class AuthorizeDotNetProcessor
         (new \AuthorizeDotNetForPaymattic\API\API()); 
 
         add_filter('wppayform/choose_payment_method_for_submission', array($this, 'choosePaymentMethod'), 10, 4);
-        add_action('wppayform/form_submission_make_payment_authorizedotnet', array($this, 'makeFormPayment'), 10, 6);
+        add_action('wppayform/form_submission_make_payment_authorizedotnet', array($this, 'makeFormPayment'), 10, 7);
         // add_action('wppayform_payment_frameless_' . $this->method, array($this, 'handleSessionRedirectBack'));
         add_filter('wppayform/entry_transactions_' . $this->method, array($this, 'addTransactionUrl'), 10, 2);
         // add_action('wppayform_ipn_AuthorizeDotNet_action_refunded', array($this, 'handleRefund'), 10, 3);
@@ -97,7 +97,7 @@ class AuthorizeDotNetProcessor
         return $paymentMethod;
     }
 
-    public function makeFormPayment($transactionId, $submissionId, $form_data, $form, $hasSubscriptions)
+    public function makeFormPayment($transactionId, $submissionId, $form_data, $form, $hasSubscriptions, $totalPayable = 0, $paymentItems = array())
     {
         $paymentMode = $this->getPaymentMode();
 
@@ -110,7 +110,7 @@ class AuthorizeDotNetProcessor
         $transaction = $transactionModel->getTransaction($transactionId);
 
         $submission = (new Submission())->getSubmission($submissionId);
-        $this->handleRedirect($transaction, $submission, $form, $form_data, $paymentMode, $hasSubscriptions);
+        $this->handleRedirect($transaction, $submission, $form, $form_data, $paymentMode, $hasSubscriptions, $paymentItems);
     }
 
     private function getSuccessURL($form, $submission)
@@ -147,7 +147,7 @@ class AuthorizeDotNetProcessor
         ), home_url());
     }
 
-    public function handleRedirect($transaction, $submission, $form, $formData, $paymentMode, $hasSubscriptions)
+    public function handleRedirect($transaction, $submission, $form, $formData, $paymentMode, $hasSubscriptions, $paymentItems = array())
     {
         $authArgs = $this->getAuthArgs($form->ID);
         // get authorizeDataValuye and dataDescriptor from fromData with sanitize_text_field
@@ -200,7 +200,7 @@ class AuthorizeDotNetProcessor
         }
 
         if ($hasSubscriptions) {
-            $this->handleSubscription($submission, $form, $formData, $lineItems, $authArgs, $dataValue, $dataDescriptor);
+            $this->handleSubscription($submission, $form, $formData, $lineItems, $authArgs, $dataValue, $dataDescriptor, $paymentItems);
         }
 
         // truncate submissionhash to 18 characters for refId
@@ -353,7 +353,7 @@ class AuthorizeDotNetProcessor
         ], 200);
     }
 
-    public function handleSubscription($submission, $form, $formData, $lineItems, $authArgs, $dataValue, $dataDescriptor)
+    public function handleSubscription($submission, $form, $formData, $lineItems, $authArgs, $dataValue, $dataDescriptor, $paymentItems = array())
     {
         $subscription = $this->getValidSubscription($submission);
 
@@ -430,10 +430,18 @@ class AuthorizeDotNetProcessor
         $amount = number_format($subscription->recurring_amount / 100, 2, '.', '');
         $totalOccurrences = Arr::get($subscription, 'bill_times', 9999) ? Arr::get($subscription, 'bill_times', 9999) : 9999;
 
+        $signUpFeeTax = 0;
+        foreach ($paymentItems as $key => $paymentItem) {
+            if ($key == 'tax_payment_input' && $paymentItem['signup_fee_tax'] == 'yes') {
+                $signUpFeeTax = Arr::get($paymentItem, 'signup_fee', 0);
+                break;
+            }
+        }
         // add sign up fee to the amount if it's there
         $trialAmount = 0.00;
         if ($subscription->initial_amount) {
-            $trialAmount = number_format($subscription->initial_amount / 100, 2, '.', '');
+            $totalTrailAmount = $subscription->initial_amount + $signUpFeeTax;
+            $trialAmount = number_format($totalTrailAmount / 100, 2, '.', '');
         }
 
         $trialOccurrences = $trailDays ? 1 : 0;
