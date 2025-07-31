@@ -65,6 +65,7 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
             'button_text' => __('Pay with authorizedotnet', 'authorizedotnet-for-paymattic'),
             'sandbox_signature_key' => '',
             'live_signature_key' => '',
+            'echeck_enabled' => 'no',
             'update_available' => $updateAvailable
         );
     }
@@ -228,6 +229,12 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
                 'type' => 'live_pub_key',
                 'placeholder' => __('Live Signature Key', 'authorizedotnet-for-paymattic')
             ),
+            'echeck_enabled' => array(
+                'value' => 'no',
+                'label' => __('Enable E-Check', 'authorizedotnet-for-paymattic'),
+                'type' => 'checkbox',
+                'desc' => __('Enable E-Check payment option', 'authorizedotnet-for-paymattic')
+            ),
             'desc' => array(
                 'value' => '<p>See our <a href="https://paymattic.com/docs/configure-authorize-net-in-wordpress-through-paymattic/" target="_blank" rel="noopener">documentation</a> to get more information about authorizedotnet setup with paymattic.</p>',
                 'type' => 'html_attr',
@@ -329,6 +336,12 @@ class AuthorizeDotNetSettings extends BasePaymentMethod
         }
 
         return trim($settings['sandbox_api_login_id']);
+    }
+
+    public function isEcheckEnabled($formId = false)
+    {
+        $settings = $this->getSettings();
+        return $settings['echeck_enabled'] === 'yes';
     }
 
     

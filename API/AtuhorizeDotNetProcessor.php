@@ -274,11 +274,11 @@ class AuthorizeDotNetProcessor
             wp_send_json_error(array('message' => 'Non varified response'), 423);
         }
     
-        if (1 == intval($responseCode)) {
-            // get the last four digits from the accountNumber
-            $cardlast4 = substr($transactionResponse['accountNumber'], -4);
+         if (1 == intval($responseCode)) {
+            $accountLast4 = substr($transactionResponse['accountNumber'], -4);
+            $accountType = $transactionResponse['accountType'] ?? 'unknown';
             $updateData = array(
-                'card_last_4' => $cardlast4,
+                'card_last_4' => $accountType === 'eCheck' ? null : $accountLast4,
                 'charge_id' => $transactionResponse['transId'],
                 'payment_note' => json_encode($data),
                 'status' => 'paid'
@@ -287,11 +287,12 @@ class AuthorizeDotNetProcessor
             $this->markAsPaid('paid', $updateData, $transaction);
 
         } else if (4 == intval($responseCode)) {
-            // error
+            $accountLast4 = substr($transactionResponse['accountNumber'], -4);
+            $accountType = $transactionResponse['accountType'] ?? 'unknown';
             $updateData = array(
                 'charge_id' => $transactionResponse['transId'],
                 'payment_note' => json_encode($data),
-                'card_last_4' => substr($transactionResponse['accountNumber'], -4),
+                'card_last_4' => $accountType === 'eCheck' ? null : $accountLast4,
                 'status' => 'on-hold',
             );
 
@@ -312,7 +313,7 @@ class AuthorizeDotNetProcessor
                 'submission_id' => $transaction->submission_id,
                 'type' => 'info',
                 'created_by' => 'PayForm Bot',
-                'content' => sprintf(__('Transaction Marked as on-hold as  the ransaction is held for review with Transaction ID: %s', 'authorizedotnet-for-paymattic'), $data['charge_id'])
+                'content' => sprintf(__('Transaction Marked as on-hold as the transaction is held for review with Transaction ID: %s', 'authorizedotnet-for-paymattic'), $data['charge_id'])
             ));
 
             wp_send_json_success(array(
@@ -342,9 +343,10 @@ class AuthorizeDotNetProcessor
                 'message' => "Payment Failed/Declined with response code: " . $responseCode,
                 'type' => 'error',
                 'redirect_url' => $this->getSuccessURL($form, $submission)
-            ), 423);
+            ), 422);
 
         }
+
 
         wp_send_json_success([
             'message' => __('Payment successfull!', 'authorizedotnet-for-paymattic'),
@@ -1001,8 +1003,8 @@ class AuthorizeDotNetProcessor
         return $transaction;
     }
 
-    public function markAsPaid($status, $updateData, $transaction)
-    {
+  public function markAsPaid($status, $updateData, $transaction)
+ {
         $submissionModel = new Submission();
         $submission = $submissionModel->getSubmission($transaction->submission_id);
 
@@ -1175,9 +1177,12 @@ class AuthorizeDotNetProcessor
 
     public function fraud_approved($transaction, $payload)
     {
+        $accountLast4 = substr($payload->accountNumber ?? '', -4);
+        $accountType = $payload->accountType ?? 'unknown';
         $updateData = array(
             'status' => 'paid',
-            'payment_note' => json_encode($payload)
+            'payment_note' => json_encode($payload),
+            'card_last_4' => $accountType === 'eCheck' ? null : $accountLast4,
         );
 
         $transactionModel = new Transaction();

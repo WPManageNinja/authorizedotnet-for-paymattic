@@ -102,6 +102,13 @@ class AuthorizeDotNetElement extends BaseComponent
 
         $clientKey = (new AuthorizeDotNetSettings())->getClientKey();
         $apiLoginId = (new AuthorizeDotNetSettings())->getApiLoginId();
+        $isEcheckEnabled = (new AuthorizeDotNetSettings())->isEcheckEnabled();
+        $paymentOptions = '{"showCreditCard": true}';
+
+        if ($isEcheckEnabled) {
+            $paymentOptions = '{"showCreditCard": true, "showBankAccount": true}';
+        }
+
 
         // wp_enqueue_script('wpf_authorize_accept_js', $acceptJs, array('jquery'), '3.0', true);
         $attributes = array(
@@ -109,7 +116,7 @@ class AuthorizeDotNetElement extends BaseComponent
             'data-clientKey' => $clientKey,
             'data-acceptUIFormBtnTxt' => $settings['button_text'] ?? 'Pay with AtuhorizeDotNet',
             'data-acceptUIFormHeaderTxt' => "Card Information",
-            'data-paymentOptions' => '{"showCreditCard": true}',
+            'data-paymentOptions' => $paymentOptions,
             'data-responseHandler'=> "responseHandler",
             'class' => 'AcceptUI',
             'style' => 'display:none',
